@@ -7,20 +7,18 @@ canvas.width = 1200;
 canvas.height = 800;
 
 let players = {};
-let bullets = [];   // ✅ always array
-let killFeed = [];
+let bullets = [];
+let killFeed = []; // ✅ must ALWAYS be array
 let walls = [];
 let myId = null;
-let room = null;
 
 let isShooting = false;
 let lastShot = 0;
 const fireRate = 120;
 
-// 🔊 sound
 const shootSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
-// 🟢 join game
+// 🟢 join
 window.onload = () => {
     let mode = prompt("Choose mode: 1v1 or 2v2") || "1v1";
     socket.emit("join", mode);
@@ -29,25 +27,22 @@ window.onload = () => {
 // 🟢 init
 socket.on("init", (data) => {
     myId = data.id;
-    room = data.room;
 
     players = data.players || {};
     bullets = Array.isArray(data.bullets) ? data.bullets : [];
-    killFeed = data.killFeed || [];
+    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
     walls = data.walls || [];
 });
 
-// 🟢 state update (SAFE FIX)
+// 🟢 state (SAFE FIX)
 socket.on("state", (data) => {
     players = data.players || {};
     bullets = Array.isArray(data.bullets) ? data.bullets : [];
-    killFeed = data.killFeed || [];
+    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
 });
 
-// 🔊 sounds
-socket.on("sound", () => {
-    shootSound.play();
-});
+// 🔊 sound
+socket.on("sound", () => shootSound.play());
 
 // 🎮 movement
 let keys = {};
@@ -81,7 +76,7 @@ canvas.addEventListener("mousemove", (e) => {
 canvas.addEventListener("mousedown", () => isShooting = true);
 canvas.addEventListener("mouseup", () => isShooting = false);
 
-// 🔫 shooting
+// 🔫 shoot
 function shoot() {
     let p = players[myId];
     if (!p) return;
@@ -103,7 +98,7 @@ function shoot() {
     shootSound.play();
 }
 
-// 🎨 draw loop
+// 🎨 draw
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -129,7 +124,7 @@ function draw() {
         ctx.fillText(`ELO: ${p.elo || 1000}`, p.x, p.y - 15);
     }
 
-    // 🔫 bullets (SAFE)
+    // 🔫 bullets SAFE
     if (Array.isArray(bullets)) {
         ctx.fillStyle = "black";
         bullets.forEach(b => {
@@ -137,11 +132,13 @@ function draw() {
         });
     }
 
-    // 💀 kill feed
-    ctx.fillStyle = "black";
-    killFeed.forEach((m, i) => {
-        ctx.fillText(m, 10, 20 + i * 20);
-    });
+    // 💀 kill feed SAFE FIX
+    if (Array.isArray(killFeed)) {
+        ctx.fillStyle = "black";
+        killFeed.forEach((m, i) => {
+            ctx.fillText(m, 10, 20 + i * 20);
+        });
+    }
 
     requestAnimationFrame(draw);
 }
