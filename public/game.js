@@ -1,132 +1,75 @@
-const socket = io();
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
-canvas.width = 1200;
-canvas.height = 800;
+app.use(express.static("public"));
 
 let players = {};
-let bullets = [];
-let killFeed = [];
-let myId = null;
+let rooms = {};
+let bullets = {};
+const walls = [{ x: 400, y: 150, w: 30, h: 400 }, { x: 800, y: 250, w: 30, h: 400 }];
 
-let keys = {};
-let mouse = { x: 0, y: 0 };
-
-let lastShot = 0;
-
-// 🟢 INIT
-socket.on("init", (data) => {
-    myId = data.id;
-
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-
-    console.log("INIT OK", myId);
-});
-
-// 🟢 STATE
-socket.on("state", (data) => {
-    players = data.players || {};
-    bullets = Array.isArray(data.bullets)
-        ? data.bullets
-        : Object.values(data.bullets || {}).flat();
-
-    killFeed = data.killFeed || [];
-});
-
-// 🎮 INPUT
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-
-// 🖱 MOUSE
-canvas.addEventListener("mousemove", (e) => {
-    let r = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - r.left;
-    mouse.y = e.clientY - r.top;
-});
-
-canvas.addEventListener("mousedown", shoot);
-
-// 🧍 MOVE
-function move() {
-    let p = players[myId];
-    if (!p) return;
-
-    let speed = 4;
-
-    let x = p.x;
-    let y = p.y;
-
-    if (keys["w"]) y -= speed;
-    if (keys["s"]) y += speed;
-    if (keys["a"]) x -= speed;
-    if (keys["d"]) x += speed;
-
-    socket.emit("move", { x, y });
-}
-
-// 🔫 SHOOT
-function shoot() {
-    let p = players[myId];
-    if (!p) return;
-
-    let now = Date.now();
-    if (now - lastShot < 120) return;
-    lastShot = now;
-
-    let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
-
-    socket.emit("shoot", {
-        x: p.x,
-        y: p.y,
-        vx: Math.cos(angle) * 8,
-        vy: Math.sin(angle) * 8
-    });
-}
-
-// 🎨 DRAW
-function draw() {
-
-    ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 🧠 FIX BLACK SCREEN
-    if (!myId || !players || !players[myId]) {
-        ctx.fillStyle = "white";
-        ctx.fillText("Loading...", 20, 20);
-        requestAnimationFrame(draw);
-        return;
+function getRoom(mode) {
+    for (let id in rooms) {
+        if (rooms[id].mode === mode && rooms[id].players.length < 2) return id;
     }
+    let id = Math.random().toString(36).slice(2, 7);
+    rooms[id] = { mode, players: [] };
+    bullets[id] = [];
+    return id;
+}
 
-    move();
-
-    // 👤 PLAYERS
+function getPlayersInRoom(roomName) {
+    let roomPlayers = {};
     for (let id in players) {
-        let p = players[id];
-
-        ctx.fillStyle = id === myId ? "blue" : "red";
-        ctx.fillRect(p.x, p.y, 20, 20);
+        if (players[id] && players[id].room === roomName) roomPlayers[id] = players[id];
     }
-
-    // 🔫 BULLETS
-    ctx.fillStyle = "black";
-    if (Array.isArray(bullets)) {
-        bullets.forEach(b => {
-            if (b && typeof b.x === "number") {
-                ctx.fillRect(b.x, b.y, 5, 5);
-            }
-        });
-    }
-
-    requestAnimationFrame(draw);
+    return roomPlayers;
 }
 
-draw();
+io.on("connection", (socket) => {
+    socket.on("join", (mode) => {
+        let room = getRoom(mode);
+        socket.join(room);
+        players[socket.id] = { x: 100, y: 100, room };
+        rooms[room].players.push(socket.id);
+        socket.emit("init", { id: socket.id, players: getPlayersInRoom(room), bullets: bullets[room] });
+    });
 
-// JOIN GAME
-window.onload = () => {
-    socket.emit("join", "1v1");
-};
+    socket.on("move", (data) => {
+        if (players[socket.id]) { players[socket.id].x = data.x; players[socket.id].y = data.y; }
+    });
+
+    socket.on("shoot", (b) => {
+        let p = players[socket.id];
+        if (p && bullets[p.room]) {
+            bullets[p.room].push({ x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+        }
+    });
+
+    socket.on("disconnect", () => {
+        if (players[socket.id]) {
+            let room = players[socket.id].room;
+            if (rooms[room]) rooms[room].players = rooms[room].players.filter(id => id !== socket.id);
+            delete players[socket.id];
+        }
+    });
+});
+
+setInterval(() => {
+    for (let room in rooms) {
+        let bList = bullets[room] || [];
+        for (let i = bList.length - 1; i >= 0; i--) {
+            let b = bList[i];
+            b.x += b.vx; b.y += b.vy;
+            if (b.x < 0 || b.x > 1200 || b.y < 0 || b.y > 800) bList.splice(i, 1);
+        }
+        io.to(room).emit("state", { players: getPlayersInRoom(room), bullets: bList });
+    }
+}, 1000 / 60);
+
+server.listen(process.env.PORT || 3000, () => console.log("Server running on port 3000"));
