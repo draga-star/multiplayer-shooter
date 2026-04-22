@@ -13,17 +13,35 @@ let players = {};
 let bullets = {};
 let killFeed = {};
 
-// 🗺 BIGGER MAP
-const MAP = { w: 1200, h: 800 };
+// 🧍 skins
+const skins = ["blue", "red", "green", "purple", "orange"];
 
-// 🧱 walls (bigger map)
+// 🏅 ranked ELO
+function getElo() {
+    return 1000;
+}
+
+// 🏆 room system (1v1 / 2v2)
+function findRoom(mode) {
+    for (let id in rooms) {
+        if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
+            return id;
+        }
+    }
+
+    let id = Math.random().toString(36).substr(2, 6);
+    rooms[id] = { mode, players: [] };
+    return id;
+}
+
+// 🧱 map
 const walls = [
     { x: 400, y: 150, w: 30, h: 400 },
     { x: 800, y: 250, w: 30, h: 400 },
     { x: 200, y: 600, w: 600, h: 30 }
 ];
 
-function rectHit(a, b) {
+function hit(a, b) {
     return (
         a.x < b.x + b.w &&
         a.x + a.w > b.x &&
@@ -32,117 +50,94 @@ function rectHit(a, b) {
     );
 }
 
-// 🏆 ROOM FINDER (1v1 / 2v2)
-function findRoom(mode = "1v1") {
-    for (let id in rooms) {
-        if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
-            return id;
-        }
-    }
-
-    let roomId = Math.random().toString(36).substring(2, 8);
-    rooms[roomId] = { mode, players: [] };
-    return roomId;
-}
-
 io.on("connection", (socket) => {
 
-    let roomId = findRoom("1v1");
+    socket.on("join", (mode) => {
 
-    socket.join(roomId);
+        let room = findRoom(mode);
+        socket.join(room);
 
-    players[socket.id] = {
-        x: Math.random() * 1000,
-        y: Math.random() * 600,
-        hp: 100,
-        score: 0,
-        room: roomId
-    };
+        players[socket.id] = {
+            x: Math.random() * 800,
+            y: Math.random() * 600,
+            hp: 100,
+            score: 0,
+            elo: 1000,
+            skin: skins[Math.floor(Math.random() * skins.length)],
+            room
+        };
 
-    rooms[roomId].players.push(socket.id);
+        rooms[room].players.push(socket.id);
 
-    if (!bullets[roomId]) bullets[roomId] = [];
-    if (!killFeed[roomId]) killFeed[roomId] = [];
+        if (!bullets[room]) bullets[room] = [];
+        if (!killFeed[room]) killFeed[room] = [];
 
-    socket.emit("init", {
-        id: socket.id,
-        roomId,
-        players,
-        bullets: bullets[roomId],
-        killFeed: killFeed[roomId],
-        walls,
-        map: MAP
+        socket.emit("init", {
+            id: socket.id,
+            room,
+            players,
+            bullets: bullets[room],
+            killFeed: killFeed[room],
+            walls
+        });
     });
 
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
 
-        let newPos = { x: data.x, y: data.y, w: 20, h: 20 };
-
-        for (let wall of walls) {
-            if (rectHit(newPos, wall)) return;
-        }
-
         p.x = data.x;
         p.y = data.y;
     });
 
-    socket.on("shoot", (bullet) => {
+    socket.on("shoot", (b) => {
         let p = players[socket.id];
         if (!p) return;
 
-        bullets[p.room].push({
-            ...bullet,
-            owner: socket.id
-        });
-
-        socket.to(p.room).emit("sound", "shoot");
+        bullets[p.room].push({ ...b, owner: socket.id });
     });
 
     socket.on("disconnect", () => {
         let p = players[socket.id];
         if (!p) return;
 
-        let roomId = p.room;
+        let room = p.room;
+        rooms[room].players = rooms[room].players.filter(x => x !== socket.id);
 
         delete players[socket.id];
-        rooms[roomId].players = rooms[roomId].players.filter(id => id !== socket.id);
     });
 });
 
-// 🎮 GAME LOOP
+// 🎮 LOOP
 setInterval(() => {
 
-    for (let roomId in rooms) {
+    for (let room in rooms) {
 
-        let bList = bullets[roomId];
+        let bList = bullets[room];
         if (!bList) continue;
 
-        bList.forEach((b, index) => {
+        bList.forEach((b, i) => {
 
             b.x += b.vx;
             b.y += b.vy;
 
-            // 🧱 wall hit
-            for (let wall of walls) {
+            // walls
+            for (let w of walls) {
                 if (
-                    b.x < wall.x + wall.w &&
-                    b.x + 5 > wall.x &&
-                    b.y < wall.y + wall.h &&
-                    b.y + 5 > wall.y
+                    b.x < w.x + w.w &&
+                    b.x + 5 > w.x &&
+                    b.y < w.y + w.h &&
+                    b.y + 5 > w.y
                 ) {
-                    bList.splice(index, 1);
+                    bList.splice(i, 1);
                     return;
                 }
             }
 
-            // 👤 player hit
+            // players
             for (let id in players) {
-                if (players[id].room !== roomId) continue;
-                if (id === b.owner) continue;
-
                 let p = players[id];
+                if (p.room !== room || id === b.owner) continue;
 
                 if (
                     b.x < p.x + 20 &&
@@ -151,23 +146,22 @@ setInterval(() => {
                     b.y + 5 > p.y
                 ) {
                     p.hp -= 20;
-                    bList.splice(index, 1);
+                    bList.splice(i, 1);
 
                     if (p.hp <= 0) {
                         let killer = players[b.owner];
 
                         if (killer) {
                             killer.score += 1;
+                            killer.elo += 25;
+                            p.elo -= 15;
 
-                            killFeed[roomId].unshift(
-                                `Player ${b.owner.slice(0,4)} killed ${id.slice(0,4)}`
-                            );
-
-                            killFeed[roomId] = killFeed[roomId].slice(0, 5);
+                            killFeed[room].unshift(`${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
+                            killFeed[room] = killFeed[room].slice(0, 5);
                         }
 
                         p.hp = 100;
-                        p.x = Math.random() * 1000;
+                        p.x = Math.random() * 800;
                         p.y = Math.random() * 600;
                     }
                 }
@@ -179,8 +173,6 @@ setInterval(() => {
 
 }, 1000 / 60);
 
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
+server.listen(process.env.PORT || 3000, () => {
+    console.log("Server running");
 });
