@@ -6,50 +6,50 @@ const ctx = canvas.getContext("2d");
 canvas.width = 1200;
 canvas.height = 800;
 
-// 🧠 GAME STATE
 let players = {};
 let bullets = [];
 let killFeed = [];
 let walls = [];
 let myId = null;
+let timeLeft = 0;
 
 let keys = {};
 let mouse = { x: 0, y: 0 };
 
+let weapon = "pistol";
 let lastShot = 0;
-
-// 📱 DEVICE DETECTION (IMPORTANT)
-const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-
-// 📱 TOUCH INPUT STORAGE
-let touch = {
-    up: false,
-    down: false,
-    left: false,
-    right: false
-};
 
 // 🟢 INIT
 socket.on("init", (data) => {
     myId = data.id;
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-    walls = data.walls || [];
-
-    if (isMobile) createMobileControls();
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
+    walls = data.walls;
+    timeLeft = data.timeLeft;
 });
 
-// 🟢 STATE UPDATE
+// 🟢 STATE
 socket.on("state", (data) => {
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-    walls = data.walls || [];
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
+    walls = data.walls;
+    timeLeft = data.timeLeft;
 });
 
-// 🎮 KEYBOARD
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+// 🎮 INPUT
+document.addEventListener("keydown", e => {
+    keys[e.key.toLowerCase()] = true;
+
+    // 🔫 WEAPON SWITCH
+    if (e.key === "1") weapon = "pistol";
+    if (e.key === "2") weapon = "rifle";
+    if (e.key === "3") weapon = "shotgun";
+
+    socket.emit("weapon", weapon);
+});
+
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
 // 🖱 MOUSE
@@ -59,63 +59,22 @@ canvas.addEventListener("mousemove", (e) => {
     mouse.y = e.clientY - r.top;
 });
 
-canvas.addEventListener("mousedown", () => shoot());
+canvas.addEventListener("mousedown", shoot);
 
-// 📱 MOBILE CONTROLS (AUTO ONLY ON MOBILE)
-function createMobileControls() {
-
-    const style = `
-        position:fixed;
-        width:70px;height:70px;
-        background:rgba(255,255,255,0.2);
-        color:white;
-        font-size:20px;
-        border:none;
-        border-radius:10px;
-        z-index:999;
-    `;
-
-    function btn(text, left, bottom, onDown, onUp) {
-        let b = document.createElement("button");
-        b.innerText = text;
-        b.style = style + `left:${left}px;bottom:${bottom}px;`;
-        b.ontouchstart = () => onDown();
-        b.ontouchend = () => onUp();
-        document.body.appendChild(b);
-    }
-
-    btn("↑", 80, 140, () => touch.up = true, () => touch.up = false);
-    btn("↓", 80, 40, () => touch.down = true, () => touch.down = false);
-    btn("←", 10, 90, () => touch.left = true, () => touch.left = false);
-    btn("→", 150, 90, () => touch.right = true, () => touch.right = false);
-
-    let shootBtn = document.createElement("button");
-    shootBtn.innerText = "🔫";
-    shootBtn.style = style + "right:40px;bottom:80px;";
-    shootBtn.ontouchstart = () => shoot();
-    document.body.appendChild(shootBtn);
-}
-
-// 🧍 MOVE (PC + MOBILE)
+// 🧍 MOVE
 function move() {
     let p = players[myId];
     if (!p) return;
 
     let speed = 4;
+
     let x = p.x;
     let y = p.y;
 
-    if (isMobile) {
-        if (touch.up) y -= speed;
-        if (touch.down) y += speed;
-        if (touch.left) x -= speed;
-        if (touch.right) x += speed;
-    } else {
-        if (keys["w"]) y -= speed;
-        if (keys["s"]) y += speed;
-        if (keys["a"]) x -= speed;
-        if (keys["d"]) x += speed;
-    }
+    if (keys["w"]) y -= speed;
+    if (keys["s"]) y += speed;
+    if (keys["a"]) x -= speed;
+    if (keys["d"]) x += speed;
 
     socket.emit("move", { x, y });
 }
@@ -139,16 +98,13 @@ function shoot() {
     });
 }
 
-// 🎨 DRAW LOOP
+// 🎨 DRAW
 function draw() {
 
     ctx.fillStyle = "#1e1e1e";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 🧠 safety check
-    if (!myId || !players[myId]) {
-        ctx.fillStyle = "white";
-        ctx.fillText("Loading...", 20, 20);
+    if (!players[myId]) {
         requestAnimationFrame(draw);
         return;
     }
@@ -157,42 +113,30 @@ function draw() {
 
     // 🧱 walls
     ctx.fillStyle = "gray";
-    for (let w of walls) {
-        ctx.fillRect(w.x, w.y, w.w, w.h);
-    }
+    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    // 🧍 PLAYERS (SKINS SYSTEM)
+    // 👤 players
     for (let id in players) {
         let p = players[id];
-        if (!p) continue;
 
-        let color = p.skin || "red";
-
-        ctx.fillStyle = color;
+        ctx.fillStyle = id === myId ? "blue" : "red";
         ctx.fillRect(p.x, p.y, 20, 20);
 
-        if (id === myId) {
-            ctx.strokeStyle = "white";
-            ctx.strokeRect(p.x, p.y, 20, 20);
-        }
+        ctx.fillStyle = "white";
+        ctx.fillText("ELO: " + p.elo, p.x, p.y - 10);
     }
 
-    // 🔫 BULLETS
+    // 🔫 bullets
     ctx.fillStyle = "black";
-    if (Array.isArray(bullets)) {
-        bullets.forEach(b => {
-            if (b && typeof b.x === "number") {
-                ctx.fillRect(b.x, b.y, 5, 5);
-            }
-        });
-    }
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
+
+    // 🏆 leaderboard + timer
+    ctx.fillStyle = "white";
+    ctx.fillText("Time: " + timeLeft, 20, 20);
 
     requestAnimationFrame(draw);
 }
 
 draw();
 
-// 🚀 JOIN GAME
-window.onload = () => {
-    socket.emit("join");
-};
+window.onload = () => socket.emit("join");
