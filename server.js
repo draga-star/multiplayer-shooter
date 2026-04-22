@@ -12,39 +12,77 @@ const io = new Server(server, {
 app.use(express.static("public"));
 
 let players = {};
-let bullets = {};
-let killFeed = {};
+let bullets = [];
+let killFeed = [];
 
-const walls = [
-    { x: 400, y: 150, w: 30, h: 400 },
-    { x: 800, y: 250, w: 30, h: 400 }
-];
+// 🏆 RANKED (ELO)
+function getElo() {
+    return 1000;
+}
 
-// 🏠 SIMPLE ROOM (1 global room = stable)
-const ROOM = "main";
+// 🎮 ROUND SYSTEM
+let roundTime = 60;
+let timeLeft = roundTime;
+
+// 🧱 RANDOM WALLS PER ROUND
+let walls = generateWalls();
+
+function generateWalls() {
+    let arr = [];
+    for (let i = 0; i < 6; i++) {
+        arr.push({
+            x: Math.random() * 1000,
+            y: Math.random() * 700,
+            w: 30,
+            h: 80
+        });
+    }
+    return arr;
+}
+
+// 🔄 RESET ROUND
+function resetRound() {
+    walls = generateWalls();
+    bullets = [];
+
+    for (let id in players) {
+        players[id].x = Math.random() * 1000;
+        players[id].y = Math.random() * 700;
+        players[id].hp = 100;
+    }
+
+    killFeed = [];
+    timeLeft = roundTime;
+}
+
+// 🏆 WEAPONS
+const weapons = {
+    pistol: { speed: 8, rate: 120 },
+    rifle: { speed: 10, rate: 80 },
+    shotgun: { speed: 7, rate: 400 }
+};
 
 io.on("connection", (socket) => {
 
-    socket.on("join", () => {
+    players[socket.id] = {
+        x: 100,
+        y: 100,
+        hp: 100,
+        elo: 1000,
+        kills: 0,
+        weapon: "pistol"
+    };
 
-        socket.join(ROOM);
-
-        players[socket.id] = {
-            x: 100,
-            y: 100,
-            hp: 100
-        };
-
-        socket.emit("init", {
-            id: socket.id,
-            players,
-            bullets: [],
-            killFeed,
-            walls
-        });
+    socket.emit("init", {
+        id: socket.id,
+        players,
+        bullets,
+        killFeed,
+        walls,
+        timeLeft
     });
 
-    // 🧍 movement (server authoritative)
+    // 🧍 MOVE
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
@@ -53,17 +91,27 @@ io.on("connection", (socket) => {
         p.y = data.y;
     });
 
-    // 🔫 shoot
+    // 🔫 SHOOT
     socket.on("shoot", (b) => {
-        if (!bullets[ROOM]) bullets[ROOM] = [];
+        let p = players[socket.id];
+        if (!p) return;
 
-        bullets[ROOM].push({
+        let w = weapons[p.weapon];
+
+        bullets.push({
             x: b.x,
             y: b.y,
             vx: b.vx,
             vy: b.vy,
             owner: socket.id
         });
+    });
+
+    // 🔫 SWITCH WEAPON
+    socket.on("weapon", (w) => {
+        if (players[socket.id]) {
+            players[socket.id].weapon = w;
+        }
     });
 
     socket.on("disconnect", () => {
@@ -74,15 +122,14 @@ io.on("connection", (socket) => {
 // 🎮 GAME LOOP
 setInterval(() => {
 
-    if (!bullets[ROOM]) bullets[ROOM] = [];
+    // ⏱ round timer
+    timeLeft -= 1 / 60;
+    if (timeLeft <= 0) resetRound();
 
-    let bList = bullets[ROOM];
+    // 🔫 bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
 
-    for (let i = bList.length - 1; i >= 0; i--) {
-
-        let b = bList[i];
-        if (!b) continue;
-
+        let b = bullets[i];
         b.x += b.vx;
         b.y += b.vy;
 
@@ -94,18 +141,50 @@ setInterval(() => {
                 b.y < w.y + w.h &&
                 b.y + 5 > w.y
             ) {
-                bList.splice(i, 1);
+                bullets.splice(i, 1);
+                break;
+            }
+        }
+
+        // 👤 players
+        for (let id in players) {
+            if (id === b.owner) continue;
+
+            let p = players[id];
+
+            if (
+                b.x < p.x + 20 &&
+                b.x + 5 > p.x &&
+                b.y < p.y + 20 &&
+                b.y + 5 > p.y
+            ) {
+                p.hp -= 25;
+
+                if (p.hp <= 0) {
+                    players[b.owner].kills++;
+                    players[b.owner].elo += 25;
+                    p.elo -= 15;
+
+                    killFeed.unshift(`${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
+                    killFeed = killFeed.slice(0, 5);
+
+                    p.hp = 100;
+                    p.x = Math.random() * 1000;
+                    p.y = Math.random() * 700;
+                }
+
+                bullets.splice(i, 1);
                 break;
             }
         }
     }
 
-    // 🔥 SEND CLEAN DATA (IMPORTANT)
     io.emit("state", {
         players,
-        bullets: bList,
+        bullets,
         killFeed,
-        walls
+        walls,
+        timeLeft: Math.floor(timeLeft)
     });
 
 }, 1000 / 60);
