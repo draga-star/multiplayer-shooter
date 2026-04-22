@@ -1,18 +1,21 @@
 {
-  "name": "game",
+  "name": "multiplayer-shooter",
   "version": "1.0.0",
-  "description": "",
+  "description": "Real-time multiplayer shooter game",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
   },
-  "keywords": [],
+  "keywords": [
+    "game",
+    "multiplayer",
+    "socket.io"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5"
   }
+}
 }
