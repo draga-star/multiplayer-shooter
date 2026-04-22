@@ -15,7 +15,7 @@ let players = {};
 let bullets = [];
 let killFeed = [];
 
-// 🏆 ROUND SETTINGS
+// 🏆 ROUND SYSTEM
 const ROUND_TIME = 180;
 let timeLeft = ROUND_TIME;
 
@@ -27,7 +27,7 @@ const spawns = [
     { x: 1000, y: 600 }
 ];
 
-// 🧱 WALLS
+// 🧱 RANDOM WALLS
 let walls = generateWalls();
 
 function generateWalls() {
@@ -55,10 +55,10 @@ function resetRound() {
         let p = players[id];
         let s = spawns[i % spawns.length];
 
-        p.hp = 100;
-        p.dead = false;
         p.x = s.x;
         p.y = s.y;
+        p.hp = 100;
+        p.dead = false;
 
         i++;
     }
@@ -72,7 +72,6 @@ io.on("connection", (socket) => {
         hp: 100,
         elo: 1000,
         kills: 0,
-        weapon: "pistol",
         dead: false
     };
 
@@ -115,7 +114,6 @@ io.on("connection", (socket) => {
 setInterval(() => {
 
     timeLeft -= 1 / 60;
-
     if (timeLeft <= 0) resetRound();
 
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -125,7 +123,7 @@ setInterval(() => {
         b.x += b.vx;
         b.y += b.vy;
 
-        // 🧱 WALL COLLISION
+        // 🧱 WALLS
         for (let w of walls) {
             if (
                 b.x < w.x + w.w &&
@@ -138,7 +136,7 @@ setInterval(() => {
             }
         }
 
-        // 👤 PLAYER COLLISION
+        // 👤 PLAYERS
         for (let id in players) {
             let p = players[id];
 
@@ -160,7 +158,7 @@ setInterval(() => {
                     let killer = players[b.owner];
 
                     if (killer) {
-                        killer.kills = (killer.kills || 0) + 1;
+                        killer.kills++;
                         killer.elo += 25;
                         p.elo -= 15;
 
@@ -168,7 +166,6 @@ setInterval(() => {
                         killFeed = killFeed.slice(0, 5);
                     }
 
-                    // 🧠 IMPORTANT FIX: STOP TWEAKING
                     p.dead = true;
                     p.hp = 0;
 
