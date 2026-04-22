@@ -4,71 +4,112 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
 
 app.use(express.static("public"));
 
 let players = {};
-let rooms = {};
 let bullets = {};
+let killFeed = {};
 
-function getRoom(mode) {
-    for (let id in rooms) {
-        if (rooms[id].mode === mode && rooms[id].players.length < 2) return id;
-    }
-    let id = Math.random().toString(36).slice(2, 7);
-    rooms[id] = { mode, players: [] };
-    bullets[id] = [];
-    return id;
-}
+const walls = [
+    { x: 400, y: 150, w: 30, h: 400 },
+    { x: 800, y: 250, w: 30, h: 400 }
+];
 
-function getPlayersInRoom(roomName) {
-    let roomPlayers = {};
-    for (let id in players) {
-        if (players[id] && players[id].room === roomName) roomPlayers[id] = players[id];
-    }
-    return roomPlayers;
-}
+// 🏠 SIMPLE ROOM (1 global room = stable)
+const ROOM = "main";
 
 io.on("connection", (socket) => {
-    socket.on("join", (mode) => {
-        let room = getRoom(mode);
-        socket.join(room);
-        players[socket.id] = { x: 100, y: 100, room };
-        rooms[room].players.push(socket.id);
-        socket.emit("init", { id: socket.id, players: getPlayersInRoom(room), bullets: bullets[room] });
+
+    socket.on("join", () => {
+
+        socket.join(ROOM);
+
+        players[socket.id] = {
+            x: 100,
+            y: 100,
+            hp: 100
+        };
+
+        socket.emit("init", {
+            id: socket.id,
+            players,
+            bullets: [],
+            killFeed,
+            walls
+        });
     });
 
+    // 🧍 movement (server authoritative)
     socket.on("move", (data) => {
-        if (players[socket.id]) { players[socket.id].x = data.x; players[socket.id].y = data.y; }
+        let p = players[socket.id];
+        if (!p) return;
+
+        p.x = data.x;
+        p.y = data.y;
     });
 
+    // 🔫 shoot
     socket.on("shoot", (b) => {
-        let p = players[socket.id];
-        if (p && bullets[p.room]) {
-            bullets[p.room].push({ x: b.x, y: b.y, vx: b.vx, vy: b.vy });
-        }
+        if (!bullets[ROOM]) bullets[ROOM] = [];
+
+        bullets[ROOM].push({
+            x: b.x,
+            y: b.y,
+            vx: b.vx,
+            vy: b.vy,
+            owner: socket.id
+        });
     });
 
     socket.on("disconnect", () => {
-        if (players[socket.id]) {
-            let room = players[socket.id].room;
-            if (rooms[room]) rooms[room].players = rooms[room].players.filter(id => id !== socket.id);
-            delete players[socket.id];
-        }
+        delete players[socket.id];
     });
 });
 
+// 🎮 GAME LOOP
 setInterval(() => {
-    for (let room in rooms) {
-        let bList = bullets[room] || [];
-        for (let i = bList.length - 1; i >= 0; i--) {
-            let b = bList[i];
-            b.x += b.vx; b.y += b.vy;
-            if (b.x < 0 || b.x > 1200 || b.y < 0 || b.y > 800) bList.splice(i, 1);
+
+    if (!bullets[ROOM]) bullets[ROOM] = [];
+
+    let bList = bullets[ROOM];
+
+    for (let i = bList.length - 1; i >= 0; i--) {
+
+        let b = bList[i];
+        if (!b) continue;
+
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // 🧱 walls
+        for (let w of walls) {
+            if (
+                b.x < w.x + w.w &&
+                b.x + 5 > w.x &&
+                b.y < w.y + w.h &&
+                b.y + 5 > w.y
+            ) {
+                bList.splice(i, 1);
+                break;
+            }
         }
-        io.to(room).emit("state", { players: getPlayersInRoom(room), bullets: bList });
     }
+
+    // 🔥 SEND CLEAN DATA (IMPORTANT)
+    io.emit("state", {
+        players,
+        bullets: bList,
+        killFeed,
+        walls
+    });
+
 }, 1000 / 60);
 
-server.listen(3000, () => console.log("Server running on http://localhost:3000"));
+server.listen(process.env.PORT || 3000, () =>
+    console.log("Server running")
+);
