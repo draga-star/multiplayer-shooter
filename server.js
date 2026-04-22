@@ -12,13 +12,14 @@ let players = {};
 let bullets = [];
 let killFeed = [];
 
-// 🧱 SIMPLE MAP WALLS
+// 🧱 MAP WALLS
 const walls = [
     { x: 300, y: 100, w: 20, h: 300 },
     { x: 500, y: 200, w: 20, h: 300 },
     { x: 150, y: 400, w: 300, h: 20 }
 ];
 
+// collision helper
 function rectHit(a, b) {
     return (
         a.x < b.x + b.w &&
@@ -39,22 +40,22 @@ io.on("connection", (socket) => {
     socket.emit("init", { players, bullets, killFeed, walls });
 
     socket.on("move", (data) => {
-        if (players[socket.id]) {
-            let newX = data.x;
-            let newY = data.y;
+        if (!players[socket.id]) return;
 
-            let testPlayer = { x: newX, y: newY, w: 20, h: 20 };
+        let newX = data.x;
+        let newY = data.y;
 
-            // 🧱 wall collision check
-            for (let wall of walls) {
-                if (rectHit(testPlayer, wall)) {
-                    return; // block movement
-                }
+        let testPlayer = { x: newX, y: newY, w: 20, h: 20 };
+
+        // 🧱 wall collision
+        for (let wall of walls) {
+            if (rectHit(testPlayer, wall)) {
+                return; // block movement
             }
-
-            players[socket.id].x = newX;
-            players[socket.id].y = newY;
         }
+
+        players[socket.id].x = newX;
+        players[socket.id].y = newY;
     });
 
     socket.on("shoot", (bullet) => {
@@ -78,7 +79,7 @@ setInterval(() => {
         b.y += b.vy;
     });
 
-    // 💥 bullet collisions
+    // 💥 collisions
     bullets.forEach((b, index) => {
 
         // 🧱 wall hit
@@ -114,7 +115,9 @@ setInterval(() => {
 
                     if (killer) {
                         killer.score += 1;
-                        killFeed.unshift(`Player ${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
+                        killFeed.unshift(
+                            `Player ${b.owner.slice(0,4)} killed ${id.slice(0,4)}`
+                        );
                         killFeed = killFeed.slice(0, 5);
                     }
 
@@ -126,6 +129,7 @@ setInterval(() => {
         }
     });
 
+    // remove out of bounds bullets
     bullets = bullets.filter(b =>
         b.x > 0 && b.x < 800 && b.y > 0 && b.y < 600
     );
@@ -134,6 +138,9 @@ setInterval(() => {
 
 }, 1000 / 60);
 
-server.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
+// start server (IMPORTANT for Render)
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+    console.log("Server running on port " + PORT);
 });
