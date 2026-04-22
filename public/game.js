@@ -14,40 +14,31 @@ let myId = null;
 let timeLeft = 0;
 
 let keys = {};
-let mouse = { x: 0, y: 0 };
 
-let lastShot = 0;
-
-// 📱 MOBILE DETECT
+// 📱 MOBILE
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-// 📱 TOUCH STATE
-let touch = {
-    up: false,
-    down: false,
-    left: false,
-    right: false
-};
+let moveJoy = { x: 0, y: 0 };
+let aimJoy = { x: 0, y: 0 };
 
 // 🟢 INIT
 socket.on("init", (data) => {
     myId = data.id;
-
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-    walls = data.walls || [];
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
+    walls = data.walls;
     timeLeft = data.timeLeft;
 
-    createMobileControls(); // IMPORTANT
+    if (isMobile) createJoysticks();
 });
 
-// 🟢 STATE UPDATE
+// 🟢 STATE
 socket.on("state", (data) => {
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-    walls = data.walls || [];
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
+    walls = data.walls;
     timeLeft = data.timeLeft;
 });
 
@@ -55,96 +46,96 @@ socket.on("state", (data) => {
 document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-// 🖱 MOUSE AIM
-canvas.addEventListener("mousemove", (e) => {
-    let r = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - r.left;
-    mouse.y = e.clientY - r.top;
-});
+// 🧠 AIM ASSIST
+function aimAssist(px, py, angle) {
+    let best = angle;
+    let minDist = 120;
 
-canvas.addEventListener("mousedown", shoot);
+    for (let id in players) {
+        if (id === myId) continue;
 
-// 📱 MOBILE CONTROLS (FULL FIX)
-function createMobileControls() {
+        let p = players[id];
+        if (!p) continue;
 
-    if (!isMobile) return;
+        let dx = p.x - px;
+        let dy = p.y - py;
 
-    if (document.getElementById("mobile-controls")) return;
+        let dist = Math.sqrt(dx*dx + dy*dy);
 
-    const container = document.createElement("div");
-    container.id = "mobile-controls";
-    container.style.position = "fixed";
-    container.style.bottom = "20px";
-    container.style.left = "20px";
-    container.style.zIndex = "9999";
-
-    const btnStyle = `
-        width:70px;
-        height:70px;
-        margin:5px;
-        font-size:22px;
-        border:none;
-        border-radius:12px;
-        background:rgba(255,255,255,0.25);
-        color:white;
-        touch-action:none;
-    `;
-
-    function btn(text, down, up) {
-        let b = document.createElement("button");
-        b.innerText = text;
-        b.style = btnStyle;
-
-        b.addEventListener("touchstart", (e) => {
-            e.preventDefault();
-            down();
-        });
-
-        b.addEventListener("touchend", (e) => {
-            e.preventDefault();
-            up();
-        });
-
-        return b;
+        if (dist < minDist) {
+            minDist = dist;
+            best = Math.atan2(dy, dx);
+        }
     }
 
-    const up = btn("↑", () => touch.up = true, () => touch.up = false);
-    const down = btn("↓", () => touch.down = true, () => touch.down = false);
-    const left = btn("←", () => touch.left = true, () => touch.left = false);
-    const right = btn("→", () => touch.right = true, () => touch.right = false);
-
-    const shootBtn = document.createElement("button");
-    shootBtn.innerText = "🔫";
-    shootBtn.style = `
-        position:fixed;
-        right:20px;
-        bottom:40px;
-        width:80px;
-        height:80px;
-        font-size:24px;
-        border:none;
-        border-radius:50%;
-        background:rgba(255,0,0,0.4);
-        color:white;
-        z-index:9999;
-        touch-action:none;
-    `;
-
-    shootBtn.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        shoot();
-    });
-
-    container.appendChild(up);
-    container.appendChild(left);
-    container.appendChild(right);
-    container.appendChild(down);
-
-    document.body.appendChild(container);
-    document.body.appendChild(shootBtn);
+    return best;
 }
 
-// 🧍 MOVE (PC + MOBILE)
+// 🎮 JOYSTICKS
+function createJoysticks() {
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+
+    container.style.position = "fixed";
+    container.style.width = "100%";
+    container.style.height = "100%";
+    container.style.zIndex = "9999";
+
+    function joy(left, bottom, onMove) {
+        let d = document.createElement("div");
+        d.style = `
+            position:fixed;
+            width:120px;
+            height:120px;
+            border-radius:50%;
+            background:rgba(255,255,255,0.1);
+            ${left}:${bottom};
+        `;
+
+        d.addEventListener("touchmove", (e) => {
+            let t = e.touches[0];
+            let rect = d.getBoundingClientRect();
+
+            let dx = t.clientX - rect.left - 60;
+            let dy = t.clientY - rect.top - 60;
+
+            let len = Math.sqrt(dx*dx + dy*dy);
+            if (len > 50) {
+                dx /= len;
+                dy /= len;
+            }
+
+            onMove(dx, dy);
+        });
+
+        d.addEventListener("touchend", () => onMove(0,0));
+
+        container.appendChild(d);
+    }
+
+    // MOVE
+    joy("left:20px", "bottom:20px", (x,y)=>{
+        moveJoy.x = x;
+        moveJoy.y = y;
+    });
+
+    // AIM
+    joy("right:20px", "bottom:20px", (x,y)=>{
+        aimJoy.x = x;
+        aimJoy.y = y;
+
+        let p = players[myId];
+        if (!p) return;
+
+        let angle = Math.atan2(y, x);
+        angle = aimAssist(p.x, p.y, angle);
+
+        shoot(angle);
+    });
+}
+
+// 🧍 MOVE
 function move() {
     let p = players[myId];
     if (!p) return;
@@ -155,10 +146,8 @@ function move() {
     let y = p.y;
 
     if (isMobile) {
-        if (touch.up) y -= speed;
-        if (touch.down) y += speed;
-        if (touch.left) x -= speed;
-        if (touch.right) x += speed;
+        x += moveJoy.x * speed;
+        y += moveJoy.y * speed;
     } else {
         if (keys["w"]) y -= speed;
         if (keys["s"]) y += speed;
@@ -170,15 +159,9 @@ function move() {
 }
 
 // 🔫 SHOOT
-function shoot() {
+function shoot(angle) {
     let p = players[myId];
     if (!p) return;
-
-    let now = Date.now();
-    if (now - lastShot < 120) return;
-    lastShot = now;
-
-    let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
 
     socket.emit("shoot", {
         x: p.x,
@@ -188,40 +171,35 @@ function shoot() {
     });
 }
 
-// 🎨 DRAW LOOP
+// 🎨 DRAW
 function draw() {
 
     ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    if (!players[myId]) {
-        requestAnimationFrame(draw);
-        return;
-    }
+    if (!players[myId]) return requestAnimationFrame(draw);
 
     move();
 
-    // 🧱 walls
+    // walls
     ctx.fillStyle = "gray";
-    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+    walls.forEach(w => ctx.fillRect(w.x,w.y,w.w,w.h));
 
-    // 👤 players + HEALTH BAR
+    // players + HP
     for (let id in players) {
         let p = players[id];
 
         ctx.fillStyle = id === myId ? "blue" : "red";
-        ctx.fillRect(p.x, p.y, 20, 20);
+        ctx.fillRect(p.x,p.y,20,20);
 
-        // 🟢 health bar
         ctx.fillStyle = "green";
-        ctx.fillRect(p.x, p.y - 8, (p.hp || 100) / 2, 5);
+        ctx.fillRect(p.x,p.y-8,(p.hp||100)/2,5);
     }
 
-    // 🔫 bullets
+    // bullets
     ctx.fillStyle = "black";
-    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
+    bullets.forEach(b => ctx.fillRect(b.x,b.y,5,5));
 
-    // 🏆 timer
     ctx.fillStyle = "white";
     ctx.fillText("Time: " + timeLeft, 20, 20);
 
@@ -230,5 +208,4 @@ function draw() {
 
 draw();
 
-// 🚀 JOIN
 window.onload = () => socket.emit("join");
