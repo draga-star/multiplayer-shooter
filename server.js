@@ -4,7 +4,10 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
 
 app.use(express.static("public"));
 
@@ -13,22 +16,20 @@ let bullets = {};
 let rooms = {};
 let killFeed = {};
 
-// 🧱 map
 const walls = [
     { x: 400, y: 150, w: 30, h: 400 },
-    { x: 800, y: 250, w: 30, h: 400 },
-    { x: 200, y: 600, w: 600, h: 30 }
+    { x: 800, y: 250, w: 30, h: 400 }
 ];
 
-// 🏆 room system
-function findRoom(mode) {
+// 🏠 room system
+function getRoom(mode) {
     for (let id in rooms) {
         if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
             return id;
         }
     }
 
-    let id = Math.random().toString(36).substring(2, 8);
+    let id = Math.random().toString(36).slice(2, 7);
     rooms[id] = { mode, players: [] };
     return id;
 }
@@ -36,15 +37,14 @@ function findRoom(mode) {
 io.on("connection", (socket) => {
 
     socket.on("join", (mode) => {
+        let room = getRoom(mode);
 
-        let room = findRoom(mode);
         socket.join(room);
 
         players[socket.id] = {
             x: 100,
             y: 100,
             hp: 100,
-            score: 0,
             room
         };
 
@@ -74,9 +74,9 @@ io.on("connection", (socket) => {
         let p = players[socket.id];
         if (!p) return;
 
-        if (!bullets[p.room]) bullets[p.room] = [];
+        let room = p.room;
 
-        bullets[p.room].push({
+        bullets[room].push({
             x: b.x,
             y: b.y,
             vx: b.vx,
@@ -90,14 +90,13 @@ io.on("connection", (socket) => {
     });
 });
 
-// 🎮 LOOP
+// 🎮 GAME LOOP
 setInterval(() => {
 
     for (let room in rooms) {
 
-        if (!bullets[room]) bullets[room] = [];
-
         let bList = bullets[room];
+        if (!bList) continue;
 
         for (let i = bList.length - 1; i >= 0; i--) {
 
@@ -106,7 +105,7 @@ setInterval(() => {
             b.x += b.vx;
             b.y += b.vy;
 
-            // walls
+            // wall hit
             for (let w of walls) {
                 if (
                     b.x < w.x + w.w &&
@@ -115,38 +114,19 @@ setInterval(() => {
                     b.y + 5 > w.y
                 ) {
                     bList.splice(i, 1);
-                    break;
-                }
-            }
-
-            // players
-            for (let id in players) {
-                let p = players[id];
-                if (id === b.owner) continue;
-
-                if (
-                    b.x < p.x + 20 &&
-                    b.x + 5 > p.x &&
-                    b.y < p.y + 20 &&
-                    b.y + 5 > p.y
-                ) {
-                    p.hp -= 20;
-                    bList.splice(i, 1);
-
-                    if (p.hp <= 0) {
-                        p.hp = 100;
-                        p.x = 100;
-                        p.y = 100;
-                    }
+                    continue;
                 }
             }
         }
     }
 
-    io.emit("state", { players, bullets, killFeed });
+    // 🔥 IMPORTANT FIX
+    io.emit("state", {
+        players,
+        bullets,
+        killFeed
+    });
 
 }, 1000 / 60);
 
-server.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
-});
+server.listen(3000, () => console.log("Server running"));
