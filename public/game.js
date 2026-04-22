@@ -14,14 +14,20 @@ let myId = null;
 let timeLeft = 0;
 
 let keys = {};
+let mouse = { x: 0, y: 0 };
 
-// 📱 MOBILE
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-let moveJoy = { x: 0, y: 0 };
-let aimJoy = { x: 0, y: 0 };
+// 🎮 JOYSTICK STATE (FIXED)
+let moveDir = { x: 0, y: 0 };
+let aimDir = { x: 0, y: 0 };
 
-// 🟢 INIT
+let shootHeld = false;
+let lastShot = 0;
+
+// =====================
+// 🟢 SOCKET EVENTS
+// =====================
 socket.on("init", (data) => {
     myId = data.id;
     players = data.players;
@@ -30,10 +36,9 @@ socket.on("init", (data) => {
     walls = data.walls;
     timeLeft = data.timeLeft;
 
-    if (isMobile) createJoysticks();
+    if (isMobile) createMobileControls();
 });
 
-// 🟢 STATE
 socket.on("state", (data) => {
     players = data.players;
     bullets = data.bullets;
@@ -42,100 +47,149 @@ socket.on("state", (data) => {
     timeLeft = data.timeLeft;
 });
 
-// 🎮 KEYBOARD
+// =====================
+// 💻 PC CONTROLS
+// =====================
 document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-// 🧠 AIM ASSIST
-function aimAssist(px, py, angle) {
-    let best = angle;
-    let minDist = 120;
+canvas.addEventListener("mousemove", e => {
+    let r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
+});
 
-    for (let id in players) {
-        if (id === myId) continue;
+canvas.addEventListener("mousedown", () => shootHeld = true);
+canvas.addEventListener("mouseup", () => shootHeld = false);
 
-        let p = players[id];
-        if (!p) continue;
+// =====================
+// 🔫 SHOOT (FIXED RATE LIMIT)
+// =====================
+function shoot(angle) {
+    let p = players[myId];
+    if (!p) return;
 
-        let dx = p.x - px;
-        let dy = p.y - py;
+    let now = Date.now();
+    if (now - lastShot < 120) return;
+    lastShot = now;
 
-        let dist = Math.sqrt(dx*dx + dy*dy);
-
-        if (dist < minDist) {
-            minDist = dist;
-            best = Math.atan2(dy, dx);
-        }
-    }
-
-    return best;
+    socket.emit("shoot", {
+        x: p.x,
+        y: p.y,
+        vx: Math.cos(angle) * 8,
+        vy: Math.sin(angle) * 8
+    });
 }
 
-// 🎮 JOYSTICKS
-function createJoysticks() {
+// =====================
+// 📱 MOBILE CONTROLS (NO SPAM FIX)
+// =====================
+function createMobileControls() {
+
+    if (document.getElementById("mobile")) return;
 
     const container = document.createElement("div");
+    container.id = "mobile";
     document.body.appendChild(container);
 
     container.style.position = "fixed";
     container.style.width = "100%";
     container.style.height = "100%";
     container.style.zIndex = "9999";
+    container.style.top = "0";
+    container.style.left = "0";
 
-    function joy(left, bottom, onMove) {
-        let d = document.createElement("div");
-        d.style = `
+    function joystick(xPos, yPos, callback) {
+        const joy = document.createElement("div");
+
+        joy.style = `
             position:fixed;
             width:120px;
             height:120px;
             border-radius:50%;
             background:rgba(255,255,255,0.1);
-            ${left}:${bottom};
+            ${xPos}:${yPos};
+            touch-action:none;
         `;
 
-        d.addEventListener("touchmove", (e) => {
-            let t = e.touches[0];
-            let rect = d.getBoundingClientRect();
+        let active = false;
 
-            let dx = t.clientX - rect.left - 60;
-            let dy = t.clientY - rect.top - 60;
+        joy.addEventListener("touchstart", e => {
+            active = true;
+        });
+
+        joy.addEventListener("touchmove", e => {
+            if (!active) return;
+
+            let t = e.touches[0];
+            let rect = joy.getBoundingClientRect();
+
+            let dx = t.clientX - (rect.left + 60);
+            let dy = t.clientY - (rect.top + 60);
 
             let len = Math.sqrt(dx*dx + dy*dy);
-            if (len > 50) {
+            if (len > 45) {
                 dx /= len;
                 dy /= len;
             }
 
-            onMove(dx, dy);
+            callback(dx, dy);
         });
 
-        d.addEventListener("touchend", () => onMove(0,0));
+        joy.addEventListener("touchend", () => {
+            active = false;
+            callback(0, 0);
+        });
 
-        container.appendChild(d);
+        container.appendChild(joy);
     }
 
-    // MOVE
-    joy("left:20px", "bottom:20px", (x,y)=>{
-        moveJoy.x = x;
-        moveJoy.y = y;
+    // 🧍 MOVE JOYSTICK
+    joystick("left:20px", "bottom:20px", (x, y) => {
+        moveDir.x = x;
+        moveDir.y = y;
     });
 
-    // AIM
-    joy("right:20px", "bottom:20px", (x,y)=>{
-        aimJoy.x = x;
-        aimJoy.y = y;
-
-        let p = players[myId];
-        if (!p) return;
-
-        let angle = Math.atan2(y, x);
-        angle = aimAssist(p.x, p.y, angle);
-
-        shoot(angle);
+    // 🎯 AIM JOYSTICK (NO AUTO SHOOT SPAM)
+    joystick("right:20px", "bottom:20px", (x, y) => {
+        aimDir.x = x;
+        aimDir.y = y;
     });
+
+    // 🔫 SHOOT BUTTON (SEPARATE)
+    const shootBtn = document.createElement("button");
+    shootBtn.innerText = "🔫";
+
+    shootBtn.style = `
+        position:fixed;
+        right:20px;
+        bottom:120px;
+        width:80px;
+        height:80px;
+        border-radius:50%;
+        font-size:24px;
+        background:red;
+        color:white;
+        border:none;
+        touch-action:none;
+    `;
+
+    shootBtn.addEventListener("touchstart", e => {
+        e.preventDefault();
+        shootHeld = true;
+    });
+
+    shootBtn.addEventListener("touchend", e => {
+        e.preventDefault();
+        shootHeld = false;
+    });
+
+    container.appendChild(shootBtn);
 }
 
-// 🧍 MOVE
+// =====================
+// 🧍 MOVE SYSTEM (FIXED MOBILE + PC)
+// =====================
 function move() {
     let p = players[myId];
     if (!p) return;
@@ -146,8 +200,8 @@ function move() {
     let y = p.y;
 
     if (isMobile) {
-        x += moveJoy.x * speed;
-        y += moveJoy.y * speed;
+        x += moveDir.x * speed;
+        y += moveDir.y * speed;
     } else {
         if (keys["w"]) y -= speed;
         if (keys["s"]) y += speed;
@@ -158,54 +212,61 @@ function move() {
     socket.emit("move", { x, y });
 }
 
-// 🔫 SHOOT
-function shoot(angle) {
+// =====================
+// 🎯 AIM + SHOOT LOOP
+// =====================
+function updateShoot() {
+
     let p = players[myId];
     if (!p) return;
 
-    socket.emit("shoot", {
-        x: p.x,
-        y: p.y,
-        vx: Math.cos(angle) * 8,
-        vy: Math.sin(angle) * 8
-    });
+    let angle;
+
+    if (isMobile) {
+        angle = Math.atan2(aimDir.y, aimDir.x);
+    } else {
+        angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+    }
+
+    if (shootHeld) shoot(angle);
 }
 
-// 🎨 DRAW
+// =====================
+// 🎮 DRAW LOOP
+// =====================
 function draw() {
 
     ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (!players[myId]) return requestAnimationFrame(draw);
 
     move();
+    updateShoot();
 
     // walls
     ctx.fillStyle = "gray";
-    walls.forEach(w => ctx.fillRect(w.x,w.y,w.w,w.h));
+    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    // players + HP
+    // players
     for (let id in players) {
         let p = players[id];
 
         ctx.fillStyle = id === myId ? "blue" : "red";
-        ctx.fillRect(p.x,p.y,20,20);
+        ctx.fillRect(p.x, p.y, 20, 20);
 
         ctx.fillStyle = "green";
-        ctx.fillRect(p.x,p.y-8,(p.hp||100)/2,5);
+        ctx.fillRect(p.x, p.y - 8, (p.hp || 100) / 2, 5);
     }
 
     // bullets
-    ctx.fillStyle = "black";
-    bullets.forEach(b => ctx.fillRect(b.x,b.y,5,5));
-
     ctx.fillStyle = "white";
-    ctx.fillText("Time: " + timeLeft, 20, 20);
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
 
     requestAnimationFrame(draw);
 }
 
 draw();
 
+// 🚀 START
 window.onload = () => socket.emit("join");
