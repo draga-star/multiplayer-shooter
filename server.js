@@ -8,31 +8,10 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-let rooms = {};
 let players = {};
 let bullets = {};
+let rooms = {};
 let killFeed = {};
-
-// 🧍 skins
-const skins = ["blue", "red", "green", "purple", "orange"];
-
-// 🏅 ranked ELO
-function getElo() {
-    return 1000;
-}
-
-// 🏆 room system (1v1 / 2v2)
-function findRoom(mode) {
-    for (let id in rooms) {
-        if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
-            return id;
-        }
-    }
-
-    let id = Math.random().toString(36).substr(2, 6);
-    rooms[id] = { mode, players: [] };
-    return id;
-}
 
 // 🧱 map
 const walls = [
@@ -41,13 +20,17 @@ const walls = [
     { x: 200, y: 600, w: 600, h: 30 }
 ];
 
-function hit(a, b) {
-    return (
-        a.x < b.x + b.w &&
-        a.x + a.w > b.x &&
-        a.y < b.y + b.h &&
-        a.y + a.h > b.y
-    );
+// 🏆 room system
+function findRoom(mode) {
+    for (let id in rooms) {
+        if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
+            return id;
+        }
+    }
+
+    let id = Math.random().toString(36).substring(2, 8);
+    rooms[id] = { mode, players: [] };
+    return id;
 }
 
 io.on("connection", (socket) => {
@@ -58,12 +41,10 @@ io.on("connection", (socket) => {
         socket.join(room);
 
         players[socket.id] = {
-            x: Math.random() * 800,
-            y: Math.random() * 600,
+            x: 100,
+            y: 100,
             hp: 100,
             score: 0,
-            elo: 1000,
-            skin: skins[Math.floor(Math.random() * skins.length)],
             room
         };
 
@@ -74,7 +55,6 @@ io.on("connection", (socket) => {
 
         socket.emit("init", {
             id: socket.id,
-            room,
             players,
             bullets: bullets[room],
             killFeed: killFeed[room],
@@ -94,16 +74,18 @@ io.on("connection", (socket) => {
         let p = players[socket.id];
         if (!p) return;
 
-        bullets[p.room].push({ ...b, owner: socket.id });
+        if (!bullets[p.room]) bullets[p.room] = [];
+
+        bullets[p.room].push({
+            x: b.x,
+            y: b.y,
+            vx: b.vx,
+            vy: b.vy,
+            owner: socket.id
+        });
     });
 
     socket.on("disconnect", () => {
-        let p = players[socket.id];
-        if (!p) return;
-
-        let room = p.room;
-        rooms[room].players = rooms[room].players.filter(x => x !== socket.id);
-
         delete players[socket.id];
     });
 });
@@ -113,10 +95,13 @@ setInterval(() => {
 
     for (let room in rooms) {
 
-        let bList = bullets[room];
-        if (!bList) continue;
+        if (!bullets[room]) bullets[room] = [];
 
-        bList.forEach((b, i) => {
+        let bList = bullets[room];
+
+        for (let i = bList.length - 1; i >= 0; i--) {
+
+            let b = bList[i];
 
             b.x += b.vx;
             b.y += b.vy;
@@ -130,14 +115,14 @@ setInterval(() => {
                     b.y + 5 > w.y
                 ) {
                     bList.splice(i, 1);
-                    return;
+                    break;
                 }
             }
 
             // players
             for (let id in players) {
                 let p = players[id];
-                if (p.room !== room || id === b.owner) continue;
+                if (id === b.owner) continue;
 
                 if (
                     b.x < p.x + 20 &&
@@ -149,30 +134,19 @@ setInterval(() => {
                     bList.splice(i, 1);
 
                     if (p.hp <= 0) {
-                        let killer = players[b.owner];
-
-                        if (killer) {
-                            killer.score += 1;
-                            killer.elo += 25;
-                            p.elo -= 15;
-
-                            killFeed[room].unshift(`${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
-                            killFeed[room] = killFeed[room].slice(0, 5);
-                        }
-
                         p.hp = 100;
-                        p.x = Math.random() * 800;
-                        p.y = Math.random() * 600;
+                        p.x = 100;
+                        p.y = 100;
                     }
                 }
             }
-        });
+        }
     }
 
     io.emit("state", { players, bullets, killFeed });
 
 }, 1000 / 60);
 
-server.listen(process.env.PORT || 3000, () => {
-    console.log("Server running");
+server.listen(3000, () => {
+    console.log("Server running on http://localhost:3000");
 });
