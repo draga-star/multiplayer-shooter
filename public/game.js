@@ -7,53 +7,54 @@ canvas.width = 1200;
 canvas.height = 800;
 
 let players = {};
-let bullets = [];
+let bullets = [];   // ✅ always array
 let killFeed = [];
 let walls = [];
 let myId = null;
 let room = null;
 
-let mode = "1v1";
-
-// 📱 mobile controls
-let keys = {};
-
-let shootHold = false;
+let isShooting = false;
 let lastShot = 0;
-
 const fireRate = 120;
 
 // 🔊 sound
 const shootSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
-// 🎮 join menu
+// 🟢 join game
 window.onload = () => {
-    mode = prompt("Choose mode: 1v1 or 2v2") || "1v1";
+    let mode = prompt("Choose mode: 1v1 or 2v2") || "1v1";
     socket.emit("join", mode);
 };
 
+// 🟢 init
 socket.on("init", (data) => {
     myId = data.id;
     room = data.room;
-    players = data.players;
-    bullets = data.bullets;
-    killFeed = data.killFeed;
-    walls = data.walls;
+
+    players = data.players || {};
+    bullets = Array.isArray(data.bullets) ? data.bullets : [];
+    killFeed = data.killFeed || [];
+    walls = data.walls || [];
 });
 
+// 🟢 state update (SAFE FIX)
 socket.on("state", (data) => {
-    players = data.players;
-    bullets = data.bullets;
-    killFeed = data.killFeed;
+    players = data.players || {};
+    bullets = Array.isArray(data.bullets) ? data.bullets : [];
+    killFeed = data.killFeed || [];
 });
 
-socket.on("sound", () => shootSound.play());
+// 🔊 sounds
+socket.on("sound", () => {
+    shootSound.play();
+});
 
-// 📱 mobile buttons (simple)
+// 🎮 movement
+let keys = {};
+
 document.addEventListener("keydown", (e) => keys[e.key] = true);
 document.addEventListener("keyup", (e) => keys[e.key] = false);
 
-// movement + lag smoothing
 function move() {
     let p = players[myId];
     if (!p) return;
@@ -68,7 +69,7 @@ function move() {
     socket.emit("move", { x: p.x, y: p.y });
 }
 
-// mouse
+// 🖱 mouse
 let mx = 0, my = 0;
 
 canvas.addEventListener("mousemove", (e) => {
@@ -77,10 +78,10 @@ canvas.addEventListener("mousemove", (e) => {
     my = e.clientY - r.top;
 });
 
-canvas.addEventListener("mousedown", () => shootHold = true);
-canvas.addEventListener("mouseup", () => shootHold = false);
+canvas.addEventListener("mousedown", () => isShooting = true);
+canvas.addEventListener("mouseup", () => isShooting = false);
 
-// shooting
+// 🔫 shooting
 function shoot() {
     let p = players[myId];
     if (!p) return;
@@ -102,37 +103,42 @@ function shoot() {
     shootSound.play();
 }
 
-// 🎨 draw
+// 🎨 draw loop
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     move();
 
-    if (shootHold) shoot();
+    if (isShooting) shoot();
 
-    // walls
+    // 🧱 walls
     ctx.fillStyle = "gray";
     walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    // players
+    // 👤 players
     for (let id in players) {
         let p = players[id];
 
-        ctx.fillStyle = p.skin;
+        ctx.fillStyle = id === myId ? "blue" : "red";
         ctx.fillRect(p.x, p.y, 20, 20);
 
         ctx.fillStyle = "green";
         ctx.fillRect(p.x, p.y - 10, p.hp / 2, 5);
 
         ctx.fillStyle = "black";
-        ctx.fillText(`ELO:${p.elo}`, p.x, p.y - 15);
+        ctx.fillText(`ELO: ${p.elo || 1000}`, p.x, p.y - 15);
     }
 
-    // bullets
-    ctx.fillStyle = "black";
-    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
+    // 🔫 bullets (SAFE)
+    if (Array.isArray(bullets)) {
+        ctx.fillStyle = "black";
+        bullets.forEach(b => {
+            if (b) ctx.fillRect(b.x, b.y, 5, 5);
+        });
+    }
 
-    // kill feed
+    // 💀 kill feed
+    ctx.fillStyle = "black";
     killFeed.forEach((m, i) => {
         ctx.fillText(m, 10, 20 + i * 20);
     });
