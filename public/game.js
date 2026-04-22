@@ -9,43 +9,36 @@ canvas.height = 800;
 let players = {};
 let bullets = [];
 let killFeed = [];
-let walls = [];
 let myId = null;
 
 let keys = {};
 let mouse = { x: 0, y: 0 };
 
 let lastShot = 0;
-const fireRate = 120;
-
-// 🔊 sound
-const shootSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
 // join
 window.onload = () => {
-    let mode = prompt("1v1 or 2v2") || "1v1";
-    socket.emit("join", mode);
+    socket.emit("join", "1v1");
 };
 
 // init
 socket.on("init", (data) => {
     myId = data.id;
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
-    walls = data.walls || [];
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
 });
 
 // state
 socket.on("state", (data) => {
-    players = data.players || {};
-    bullets = data.bullets || [];
-    killFeed = data.killFeed || [];
+    players = data.players;
+    bullets = data.bullets;
+    killFeed = data.killFeed;
 });
 
 // input
-document.addEventListener("keydown", (e) => keys[e.key.toLowerCase()] = true);
-document.addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
 
 // mouse
 canvas.addEventListener("mousemove", (e) => {
@@ -56,7 +49,7 @@ canvas.addEventListener("mousemove", (e) => {
 
 canvas.addEventListener("mousedown", shoot);
 
-// movement (SMOOTH CLIENT PREDICTION)
+// movement
 function move() {
     let p = players[myId];
     if (!p) return;
@@ -80,20 +73,18 @@ function shoot() {
     if (!p) return;
 
     let now = Date.now();
-    if (now - lastShot < fireRate) return;
+    if (now - lastShot < 120) return;
 
     lastShot = now;
 
     let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
 
     socket.emit("shoot", {
-        x: p.x + 10,
-        y: p.y + 10,
+        x: p.x,
+        y: p.y,
         vx: Math.cos(angle) * 8,
         vy: Math.sin(angle) * 8
     });
-
-    shootSound.play();
 }
 
 // draw
@@ -102,19 +93,12 @@ function draw() {
 
     move();
 
-    // walls
-    ctx.fillStyle = "gray";
-    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
-
     // players
     for (let id in players) {
         let p = players[id];
 
         ctx.fillStyle = id === myId ? "blue" : "red";
         ctx.fillRect(p.x, p.y, 20, 20);
-
-        ctx.fillStyle = "green";
-        ctx.fillRect(p.x, p.y - 10, (p.hp || 100) / 2, 5);
     }
 
     // bullets
