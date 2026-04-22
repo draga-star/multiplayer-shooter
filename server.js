@@ -15,16 +15,19 @@ let players = {};
 let bullets = [];
 let killFeed = [];
 
-// 🏆 RANKED (ELO)
-function getElo() {
-    return 1000;
-}
+// 🏆 ROUND SYSTEM
+const ROUND_TIME = 180; // 3 minutes
+let timeLeft = ROUND_TIME;
 
-// 🎮 ROUND SYSTEM
-let roundTime = 60;
-let timeLeft = roundTime;
+// 🧱 FIXED SPAWN POINTS
+const spawns = [
+    { x: 100, y: 100 },
+    { x: 1000, y: 100 },
+    { x: 100, y: 600 },
+    { x: 1000, y: 600 }
+];
 
-// 🧱 RANDOM WALLS PER ROUND
+// 🧱 RANDOM WALLS
 let walls = generateWalls();
 
 function generateWalls() {
@@ -44,23 +47,22 @@ function generateWalls() {
 function resetRound() {
     walls = generateWalls();
     bullets = [];
+    timeLeft = ROUND_TIME;
+
+    let i = 0;
 
     for (let id in players) {
-        players[id].x = Math.random() * 1000;
-        players[id].y = Math.random() * 700;
+        let s = spawns[i % spawns.length];
+
+        players[id].x = s.x;
+        players[id].y = s.y;
         players[id].hp = 100;
+
+        i++;
     }
 
     killFeed = [];
-    timeLeft = roundTime;
 }
-
-// 🏆 WEAPONS
-const weapons = {
-    pistol: { speed: 8, rate: 120 },
-    rifle: { speed: 10, rate: 80 },
-    shotgun: { speed: 7, rate: 400 }
-};
 
 io.on("connection", (socket) => {
 
@@ -82,7 +84,6 @@ io.on("connection", (socket) => {
         timeLeft
     });
 
-    // 🧍 MOVE
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
@@ -91,13 +92,7 @@ io.on("connection", (socket) => {
         p.y = data.y;
     });
 
-    // 🔫 SHOOT
     socket.on("shoot", (b) => {
-        let p = players[socket.id];
-        if (!p) return;
-
-        let w = weapons[p.weapon];
-
         bullets.push({
             x: b.x,
             y: b.y,
@@ -107,29 +102,22 @@ io.on("connection", (socket) => {
         });
     });
 
-    // 🔫 SWITCH WEAPON
-    socket.on("weapon", (w) => {
-        if (players[socket.id]) {
-            players[socket.id].weapon = w;
-        }
-    });
-
     socket.on("disconnect", () => {
         delete players[socket.id];
     });
 });
 
-// 🎮 GAME LOOP
+// 🎮 LOOP
 setInterval(() => {
 
-    // ⏱ round timer
     timeLeft -= 1 / 60;
+
     if (timeLeft <= 0) resetRound();
 
-    // 🔫 bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
 
         let b = bullets[i];
+
         b.x += b.vx;
         b.y += b.vy;
 
@@ -169,8 +157,11 @@ setInterval(() => {
                     killFeed = killFeed.slice(0, 5);
 
                     p.hp = 100;
-                    p.x = Math.random() * 1000;
-                    p.y = Math.random() * 700;
+
+                    // respawn at random spawn
+                    let s = spawns[Math.floor(Math.random() * spawns.length)];
+                    p.x = s.x;
+                    p.y = s.y;
                 }
 
                 bullets.splice(i, 1);
