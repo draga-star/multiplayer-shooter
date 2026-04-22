@@ -15,11 +15,11 @@ let players = {};
 let bullets = [];
 let killFeed = [];
 
-// 🏆 ROUND SYSTEM
-const ROUND_TIME = 180; // 3 minutes
+// 🏆 ROUND SETTINGS
+const ROUND_TIME = 180;
 let timeLeft = ROUND_TIME;
 
-// 🧱 FIXED SPAWN POINTS
+// 🧱 SPAWNS
 const spawns = [
     { x: 100, y: 100 },
     { x: 1000, y: 100 },
@@ -27,7 +27,7 @@ const spawns = [
     { x: 1000, y: 600 }
 ];
 
-// 🧱 RANDOM WALLS
+// 🧱 WALLS
 let walls = generateWalls();
 
 function generateWalls() {
@@ -47,21 +47,21 @@ function generateWalls() {
 function resetRound() {
     walls = generateWalls();
     bullets = [];
+    killFeed = [];
     timeLeft = ROUND_TIME;
 
     let i = 0;
-
     for (let id in players) {
+        let p = players[id];
         let s = spawns[i % spawns.length];
 
-        players[id].x = s.x;
-        players[id].y = s.y;
-        players[id].hp = 100;
+        p.hp = 100;
+        p.dead = false;
+        p.x = s.x;
+        p.y = s.y;
 
         i++;
     }
-
-    killFeed = [];
 }
 
 io.on("connection", (socket) => {
@@ -72,7 +72,8 @@ io.on("connection", (socket) => {
         hp: 100,
         elo: 1000,
         kills: 0,
-        weapon: "pistol"
+        weapon: "pistol",
+        dead: false
     };
 
     socket.emit("init", {
@@ -86,13 +87,16 @@ io.on("connection", (socket) => {
 
     socket.on("move", (data) => {
         let p = players[socket.id];
-        if (!p) return;
+        if (!p || p.dead) return;
 
         p.x = data.x;
         p.y = data.y;
     });
 
     socket.on("shoot", (b) => {
+        let p = players[socket.id];
+        if (!p || p.dead) return;
+
         bullets.push({
             x: b.x,
             y: b.y,
@@ -107,7 +111,7 @@ io.on("connection", (socket) => {
     });
 });
 
-// 🎮 LOOP
+// 🎮 GAME LOOP
 setInterval(() => {
 
     timeLeft -= 1 / 60;
@@ -121,7 +125,7 @@ setInterval(() => {
         b.x += b.vx;
         b.y += b.vy;
 
-        // 🧱 walls
+        // 🧱 WALL COLLISION
         for (let w of walls) {
             if (
                 b.x < w.x + w.w &&
@@ -134,11 +138,12 @@ setInterval(() => {
             }
         }
 
-        // 👤 players
+        // 👤 PLAYER COLLISION
         for (let id in players) {
-            if (id === b.owner) continue;
-
             let p = players[id];
+
+            if (!p || p.dead) continue;
+            if (id === b.owner) continue;
 
             if (
                 b.x < p.x + 20 &&
@@ -146,26 +151,37 @@ setInterval(() => {
                 b.y < p.y + 20 &&
                 b.y + 5 > p.y
             ) {
+
                 p.hp -= 25;
+                bullets.splice(i, 1);
 
                 if (p.hp <= 0) {
-                    players[b.owner].kills++;
-                    players[b.owner].elo += 25;
-                    p.elo -= 15;
 
-                    killFeed.unshift(`${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
-                    killFeed = killFeed.slice(0, 5);
+                    let killer = players[b.owner];
 
-                    p.hp = 100;
+                    if (killer) {
+                        killer.kills = (killer.kills || 0) + 1;
+                        killer.elo += 25;
+                        p.elo -= 15;
 
-                    // respawn at random spawn
-                    let s = spawns[Math.floor(Math.random() * spawns.length)];
-                    p.x = s.x;
-                    p.y = s.y;
+                        killFeed.unshift(`${b.owner.slice(0,4)} killed ${id.slice(0,4)}`);
+                        killFeed = killFeed.slice(0, 5);
+                    }
+
+                    // 🧠 IMPORTANT FIX: STOP TWEAKING
+                    p.dead = true;
+                    p.hp = 0;
+
+                    setTimeout(() => {
+                        p.dead = false;
+                        p.hp = 100;
+
+                        let s = spawns[Math.floor(Math.random() * spawns.length)];
+                        p.x = s.x;
+                        p.y = s.y;
+
+                    }, 500);
                 }
-
-                bullets.splice(i, 1);
-                break;
             }
         }
     }
