@@ -21,7 +21,6 @@ const walls = [
     { x: 800, y: 250, w: 30, h: 400 }
 ];
 
-// 🏠 ROOM
 function getRoom(mode) {
     for (let id in rooms) {
         if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
@@ -30,9 +29,11 @@ function getRoom(mode) {
     }
 
     let id = Math.random().toString(36).slice(2, 7);
+
     rooms[id] = { mode, players: [] };
     bullets[id] = [];
     killFeed[id] = [];
+
     return id;
 }
 
@@ -55,13 +56,12 @@ io.on("connection", (socket) => {
         socket.emit("init", {
             id: socket.id,
             players,
-            bullets: bullets[room] || [],
-            killFeed: killFeed[room] || [],
+            bullets: bullets[room],
+            killFeed: killFeed[room],
             walls
         });
     });
 
-    // 🧍 movement (input-based)
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
@@ -70,14 +70,13 @@ io.on("connection", (socket) => {
         p.y = data.y;
     });
 
-    // 🔫 shooting
     socket.on("shoot", (b) => {
         let p = players[socket.id];
         if (!p) return;
 
-        let room = p.room;
+        if (!bullets[p.room]) bullets[p.room] = [];
 
-        bullets[room].push({
+        bullets[p.room].push({
             x: b.x,
             y: b.y,
             vx: b.vx,
@@ -91,22 +90,23 @@ io.on("connection", (socket) => {
     });
 });
 
-// 🎮 GAME LOOP
+// 🎮 LOOP
 setInterval(() => {
 
     for (let room in rooms) {
 
+        if (!bullets[room]) bullets[room] = [];
+
         let bList = bullets[room];
-        if (!bList) continue;
 
         for (let i = bList.length - 1; i >= 0; i--) {
 
             let b = bList[i];
+            if (!b) continue;
 
             b.x += b.vx;
             b.y += b.vy;
 
-            // 🧱 walls
             for (let w of walls) {
                 if (
                     b.x < w.x + w.w &&
@@ -121,17 +121,9 @@ setInterval(() => {
         }
     }
 
-    // 🔥 SAFE FLAT STATE (FIX CRASH)
-    let allBullets = [];
-    for (let r in bullets) {
-        if (Array.isArray(bullets[r])) {
-            allBullets.push(...bullets[r]);
-        }
-    }
-
     io.emit("state", {
         players,
-        bullets: allBullets,
+        bullets,
         killFeed
     });
 
