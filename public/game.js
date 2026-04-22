@@ -16,7 +16,6 @@ let timeLeft = 0;
 let keys = {};
 let mouse = { x: 0, y: 0 };
 
-let weapon = "pistol";
 let lastShot = 0;
 
 // 🟢 INIT
@@ -39,17 +38,7 @@ socket.on("state", (data) => {
 });
 
 // 🎮 INPUT
-document.addEventListener("keydown", e => {
-    keys[e.key.toLowerCase()] = true;
-
-    // 🔫 WEAPON SWITCH
-    if (e.key === "1") weapon = "pistol";
-    if (e.key === "2") weapon = "rifle";
-    if (e.key === "3") weapon = "shotgun";
-
-    socket.emit("weapon", weapon);
-});
-
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
 // 🖱 MOUSE
@@ -115,22 +104,23 @@ function draw() {
     ctx.fillStyle = "gray";
     walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    // 👤 players
+    // 👤 players + HEALTH BAR
     for (let id in players) {
         let p = players[id];
 
         ctx.fillStyle = id === myId ? "blue" : "red";
         ctx.fillRect(p.x, p.y, 20, 20);
 
-        ctx.fillStyle = "white";
-        ctx.fillText("ELO: " + p.elo, p.x, p.y - 10);
+        // 🟢 HEALTH BAR
+        ctx.fillStyle = "green";
+        ctx.fillRect(p.x, p.y - 8, (p.hp || 100) / 2, 5);
     }
 
     // 🔫 bullets
     ctx.fillStyle = "black";
     bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
 
-    // 🏆 leaderboard + timer
+    // 🏆 UI
     ctx.fillStyle = "white";
     ctx.fillText("Time: " + timeLeft, 20, 20);
 
