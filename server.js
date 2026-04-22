@@ -12,8 +12,8 @@ const io = new Server(server, {
 app.use(express.static("public"));
 
 let players = {};
-let bullets = {};
 let rooms = {};
+let bullets = {};
 let killFeed = {};
 
 const walls = [
@@ -21,24 +21,17 @@ const walls = [
     { x: 800, y: 250, w: 30, h: 400 }
 ];
 
-// 🏠 ROOM SYSTEM FIXED
+// 🏠 ROOM SYSTEM
 function getRoom(mode) {
     for (let id in rooms) {
-        if (
-            rooms[id].mode === mode &&
-            rooms[id].players.length < (mode === "1v1" ? 2 : 4)
-        ) {
+        if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
             return id;
         }
     }
 
-    let id = Math.random().toString(36).substring(2, 7);
+    let id = Math.random().toString(36).slice(2, 7);
 
-    rooms[id] = {
-        mode,
-        players: []
-    };
-
+    rooms[id] = { mode, players: [] };
     bullets[id] = [];
     killFeed[id] = [];
 
@@ -47,7 +40,6 @@ function getRoom(mode) {
 
 io.on("connection", (socket) => {
 
-    // 🟢 JOIN
     socket.on("join", (mode) => {
 
         let room = getRoom(mode);
@@ -71,7 +63,6 @@ io.on("connection", (socket) => {
         });
     });
 
-    // 🧍 MOVE (no physics override → prevents jitter)
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
@@ -80,12 +71,12 @@ io.on("connection", (socket) => {
         p.y = data.y;
     });
 
-    // 🔫 SHOOT FIXED
     socket.on("shoot", (b) => {
         let p = players[socket.id];
         if (!p) return;
 
         let room = p.room;
+
         if (!bullets[room]) bullets[room] = [];
 
         bullets[room].push({
@@ -97,22 +88,12 @@ io.on("connection", (socket) => {
         });
     });
 
-    // ❌ DISCONNECT CLEANUP FIXED
     socket.on("disconnect", () => {
-        let p = players[socket.id];
-        if (!p) return;
-
-        let room = p.room;
-
-        if (rooms[room]) {
-            rooms[room].players = rooms[room].players.filter(id => id !== socket.id);
-        }
-
         delete players[socket.id];
     });
 });
 
-// 🎮 GAME LOOP FIXED
+// 🎮 GAME LOOP
 setInterval(() => {
 
     for (let room in rooms) {
@@ -124,13 +105,12 @@ setInterval(() => {
         for (let i = bList.length - 1; i >= 0; i--) {
 
             let b = bList[i];
-
             if (!b) continue;
 
             b.x += b.vx;
             b.y += b.vy;
 
-            // 🧱 WALL COLLISION
+            // 🧱 WALLS
             for (let w of walls) {
                 if (
                     b.x < w.x + w.w &&
@@ -143,11 +123,11 @@ setInterval(() => {
                 }
             }
 
-            // 👤 PLAYER HIT DETECTION (FIXED SAFE)
+            // 👤 PLAYER HIT
             for (let id in players) {
                 let p = players[id];
 
-                if (!p || p.room !== room || id === b.owner) continue;
+                if (!p || id === b.owner) continue;
 
                 if (
                     b.x < p.x + 20 &&
@@ -170,15 +150,15 @@ setInterval(() => {
         }
     }
 
-    // 🔥 IMPORTANT FIX: SAFE STATE SYNC
+    // 🔥 SAFE STATE (NO CRASH)
     io.emit("state", {
-        players,
-        bullets,
-        killFeed
+        players: players || {},
+        bullets: bullets || {},
+        killFeed: killFeed || {}
     });
 
 }, 1000 / 60);
 
 server.listen(process.env.PORT || 3000, () =>
-    console.log("Server running on port 3000")
+    console.log("Server running")
 );
