@@ -16,40 +16,48 @@ let mouse = { x: 0, y: 0 };
 
 let lastShot = 0;
 
-// join
+// 🔥 JOIN
 window.onload = () => {
     socket.emit("join", "1v1");
 };
 
-// init
+// 🔥 INIT
 socket.on("init", (data) => {
     myId = data.id;
-    players = data.players;
-    bullets = data.bullets;
-    killFeed = data.killFeed;
+    players = data.players || {};
+
+    bullets = normalizeBullets(data.bullets);
+    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
 });
 
-// state
+// 🔥 STATE (IMPORTANT FIX)
 socket.on("state", (data) => {
-    players = data.players;
-    bullets = data.bullets;
-    killFeed = data.killFeed;
+    players = data.players || {};
+    bullets = normalizeBullets(data.bullets);
+    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
 });
 
-// input
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
+// 🧠 FIX: makes bullets ALWAYS array
+function normalizeBullets(data) {
+    if (Array.isArray(data)) return data;
+    if (!data) return [];
+    return Object.values(data).flat();
+}
 
-// mouse
+// 🎮 INPUT
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+// 🖱 MOUSE
 canvas.addEventListener("mousemove", (e) => {
-    let r = canvas.getBoundingClientRect();
+    const r = canvas.getBoundingClientRect();
     mouse.x = e.clientX - r.left;
     mouse.y = e.clientY - r.top;
 });
 
 canvas.addEventListener("mousedown", shoot);
 
-// movement
+// 🧍 MOVE
 function move() {
     let p = players[myId];
     if (!p) return;
@@ -67,7 +75,7 @@ function move() {
     socket.emit("move", { x, y });
 }
 
-// shoot (FIXED AIM)
+// 🔫 SHOOT (aim fix)
 function shoot() {
     let p = players[myId];
     if (!p) return;
@@ -87,23 +95,38 @@ function shoot() {
     });
 }
 
-// draw
+// 🎨 DRAW LOOP
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     move();
 
-    // players
+    // 👤 players
     for (let id in players) {
         let p = players[id];
+        if (!p) continue;
 
         ctx.fillStyle = id === myId ? "blue" : "red";
         ctx.fillRect(p.x, p.y, 20, 20);
     }
 
-    // bullets
+    // 🔫 bullets (SAFE FIX)
     ctx.fillStyle = "black";
-    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
+    if (Array.isArray(bullets)) {
+        bullets.forEach(b => {
+            if (b && typeof b.x === "number") {
+                ctx.fillRect(b.x, b.y, 5, 5);
+            }
+        });
+    }
+
+    // 💀 kill feed (SAFE)
+    ctx.fillStyle = "black";
+    if (Array.isArray(killFeed)) {
+        killFeed.forEach((m, i) => {
+            ctx.fillText(m, 10, 20 + i * 20);
+        });
+    }
 
     requestAnimationFrame(draw);
 }
