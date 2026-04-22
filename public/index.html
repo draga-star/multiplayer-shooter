@@ -3,33 +3,39 @@
 <head>
   <title>Multiplayer Shooter</title>
 
+  <!-- 🎮 GAME STYLES (IMPORTANT FIXES) -->
   <style>
     body {
-      margin: 0;
-      overflow: hidden;
-      background: #111;
-      font-family: Arial;
+        margin: 0;
+        overflow: hidden;
+        touch-action: none;
+        background: #1e1e1e;
+        font-family: Arial;
     }
 
     canvas {
-      display: block;
+        display: block;
+        margin: 0 auto;
+        background: #1e1e1e;
+    }
+
+    /* 📱 mobile buttons layering fix */
+    button {
+        user-select: none;
+        -webkit-user-select: none;
     }
   </style>
+
 </head>
 
 <body>
 
-<canvas id="game"></canvas>
+  <!-- 🎮 GAME CANVAS -->
+  <canvas id="game"></canvas>
 
-<!-- socket.io MUST load from server -->
-<script src="/socket.io/socket.io.js"></script>
-
-<!-- your game -->
-<script src="game.js"></script>
-
-<script>
-console.log("INDEX LOADED");
-</script>
+  <!-- 🔌 SOCKET + GAME -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
 
 </body>
 </html>
