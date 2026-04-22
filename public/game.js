@@ -1,9 +1,10 @@
 const socket = io();
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-canvas.width = 800;
-canvas.height = 600;
+canvas.width = 1200;
+canvas.height = 800;
 
 let players = {};
 let bullets = [];
@@ -13,7 +14,10 @@ let myId = null;
 
 let isShooting = false;
 let lastShot = 0;
-const fireRate = 200;
+const fireRate = 150;
+
+// 🔊 sounds
+const shootSound = new Audio("https://actions.google.com/sounds/v1/alarms/medium_bell_ring.ogg");
 
 socket.on("connect", () => {
     myId = socket.id;
@@ -30,62 +34,57 @@ socket.on("state", (data) => {
     players = data.players;
     bullets = data.bullets;
     killFeed = data.killFeed;
-    walls = data.walls;
+});
+
+socket.on("sound", (type) => {
+    if (type === "shoot") shootSound.play();
 });
 
 // movement
 document.addEventListener("keydown", (e) => {
-    if (!players[myId]) return;
-
     let p = players[myId];
+    if (!p) return;
 
-    let newX = p.x;
-    let newY = p.y;
+    let x = p.x;
+    let y = p.y;
 
-    if (e.key === "w") newY -= 5;
-    if (e.key === "s") newY += 5;
-    if (e.key === "a") newX -= 5;
-    if (e.key === "d") newX += 5;
+    if (e.key === "w") y -= 6;
+    if (e.key === "s") y += 6;
+    if (e.key === "a") x -= 6;
+    if (e.key === "d") x += 6;
 
-    socket.emit("move", { x: newX, y: newY });
+    socket.emit("move", { x, y });
 });
 
-// shooting
-canvas.addEventListener("mousedown", () => {
-    isShooting = true;
-});
-
-canvas.addEventListener("mouseup", () => {
-    isShooting = false;
-});
-
-let mouseX = 0;
-let mouseY = 0;
+// mouse
+let mx = 0, my = 0;
 
 canvas.addEventListener("mousemove", (e) => {
-    let rect = canvas.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
+    let r = canvas.getBoundingClientRect();
+    mx = e.clientX - r.left;
+    my = e.clientY - r.top;
 });
 
-function handleShooting() {
-    if (!isShooting || !players[myId]) return;
+canvas.addEventListener("mousedown", () => isShooting = true);
+canvas.addEventListener("mouseup", () => isShooting = false);
+
+// shooting
+function shoot() {
+    let p = players[myId];
+    if (!p) return;
 
     let now = Date.now();
     if (now - lastShot < fireRate) return;
 
     lastShot = now;
 
-    let p = players[myId];
-
-    let angle = Math.atan2(mouseY - p.y, mouseX - p.x);
-    let speed = 6;
+    let angle = Math.atan2(my - p.y, mx - p.x);
 
     socket.emit("shoot", {
         x: p.x + 10,
         y: p.y + 10,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed
+        vx: Math.cos(angle) * 7,
+        vy: Math.sin(angle) * 7
     });
 }
 
@@ -95,9 +94,7 @@ function draw() {
 
     // 🧱 walls
     ctx.fillStyle = "gray";
-    walls.forEach(w => {
-        ctx.fillRect(w.x, w.y, w.w, w.h);
-    });
+    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
     // players
     for (let id in players) {
@@ -110,22 +107,20 @@ function draw() {
         ctx.fillRect(p.x, p.y - 10, p.hp / 2, 5);
 
         ctx.fillStyle = "black";
-        ctx.fillText(`K: ${p.score}`, p.x, p.y - 20);
+        ctx.fillText(p.score, p.x, p.y - 15);
     }
 
     // bullets
     ctx.fillStyle = "black";
-    bullets.forEach(b => {
-        ctx.fillRect(b.x, b.y, 5, 5);
-    });
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
 
     // kill feed
-    ctx.fillStyle = "black";
-    killFeed.forEach((msg, i) => {
-        ctx.fillText(msg, 10, 20 + i * 20);
+    killFeed.forEach((m, i) => {
+        ctx.fillText(m, 10, 20 + i * 20);
     });
 
-    handleShooting();
+    if (isShooting) shoot();
+
     requestAnimationFrame(draw);
 }
 
