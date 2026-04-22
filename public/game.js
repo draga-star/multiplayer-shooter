@@ -16,46 +16,7 @@ let mouse = { x: 0, y: 0 };
 
 let lastShot = 0;
 
-// 🧠 WAIT STATE (FIX BLACK SCREEN)
-function draw() {
-
-    ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // ❗ WAIT FOR SOCKET
-    if (!myId || !players) {
-        ctx.fillStyle = "white";
-        ctx.fillText("Connecting...", 20, 20);
-        requestAnimationFrame(draw);
-        return;
-    }
-
-    move();
-
-    // 👤 PLAYERS
-    for (let id in players) {
-        let p = players[id];
-        if (!p) continue;
-
-        ctx.fillStyle = id === myId ? "blue" : "red";
-        ctx.fillRect(p.x, p.y, 20, 20);
-    }
-
-    // 🔫 BULLETS SAFE
-    ctx.fillStyle = "black";
-
-    if (Array.isArray(bullets)) {
-        bullets.forEach(b => {
-            if (b && typeof b.x === "number") {
-                ctx.fillRect(b.x, b.y, 5, 5);
-            }
-        });
-    }
-
-    requestAnimationFrame(draw);
-}
-
-// 🔥 INIT
+// 🧠 INIT
 socket.on("init", (data) => {
     myId = data.id;
     players = data.players || {};
@@ -63,13 +24,10 @@ socket.on("init", (data) => {
     killFeed = data.killFeed || [];
 });
 
-// 🔥 STATE SAFE
+// 🧠 STATE SAFE
 socket.on("state", (data) => {
     players = data.players || {};
-    bullets = Array.isArray(data.bullets)
-        ? data.bullets
-        : Object.values(data.bullets || {}).flat();
-
+    bullets = Array.isArray(data.bullets) ? data.bullets : [];
     killFeed = data.killFeed || [];
 });
 
@@ -86,12 +44,12 @@ canvas.addEventListener("mousemove", (e) => {
 
 canvas.addEventListener("mousedown", shoot);
 
-// 🧍 MOVEMENT (NO JITTER)
+// 🧍 MOVE
 function move() {
     let p = players[myId];
     if (!p) return;
 
-    let speed = 5;
+    let speed = 4;
 
     let x = p.x;
     let y = p.y;
@@ -121,6 +79,42 @@ function shoot() {
         vx: Math.cos(angle) * 8,
         vy: Math.sin(angle) * 8
     });
+}
+
+// 🎨 DRAW LOOP
+function draw() {
+
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // ⚠️ FIX BLACK SCREEN
+    if (!myId || !players) {
+        requestAnimationFrame(draw);
+        return;
+    }
+
+    move();
+
+    // 👤 players
+    for (let id in players) {
+        let p = players[id];
+        if (!p) continue;
+
+        ctx.fillStyle = id === myId ? "blue" : "red";
+        ctx.fillRect(p.x, p.y, 20, 20);
+    }
+
+    // 🔫 bullets SAFE
+    ctx.fillStyle = "black";
+    if (Array.isArray(bullets)) {
+        bullets.forEach(b => {
+            if (b && typeof b.x === "number") {
+                ctx.fillRect(b.x, b.y, 5, 5);
+            }
+        });
+    }
+
+    requestAnimationFrame(draw);
 }
 
 draw();
