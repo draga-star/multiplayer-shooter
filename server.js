@@ -21,7 +21,7 @@ const walls = [
     { x: 800, y: 250, w: 30, h: 400 }
 ];
 
-// 🏠 ROOM SYSTEM
+// 🏠 ROOM
 function getRoom(mode) {
     for (let id in rooms) {
         if (rooms[id].mode === mode && rooms[id].players.length < (mode === "1v1" ? 2 : 4)) {
@@ -30,11 +30,9 @@ function getRoom(mode) {
     }
 
     let id = Math.random().toString(36).slice(2, 7);
-
     rooms[id] = { mode, players: [] };
     bullets[id] = [];
     killFeed[id] = [];
-
     return id;
 }
 
@@ -63,6 +61,7 @@ io.on("connection", (socket) => {
         });
     });
 
+    // 🧍 movement (input-based)
     socket.on("move", (data) => {
         let p = players[socket.id];
         if (!p) return;
@@ -71,13 +70,12 @@ io.on("connection", (socket) => {
         p.y = data.y;
     });
 
+    // 🔫 shooting
     socket.on("shoot", (b) => {
         let p = players[socket.id];
         if (!p) return;
 
         let room = p.room;
-
-        if (!bullets[room]) bullets[room] = [];
 
         bullets[room].push({
             x: b.x,
@@ -98,19 +96,17 @@ setInterval(() => {
 
     for (let room in rooms) {
 
-        if (!bullets[room]) bullets[room] = [];
-
         let bList = bullets[room];
+        if (!bList) continue;
 
         for (let i = bList.length - 1; i >= 0; i--) {
 
             let b = bList[i];
-            if (!b) continue;
 
             b.x += b.vx;
             b.y += b.vy;
 
-            // 🧱 WALLS
+            // 🧱 walls
             for (let w of walls) {
                 if (
                     b.x < w.x + w.w &&
@@ -122,39 +118,21 @@ setInterval(() => {
                     break;
                 }
             }
-
-            // 👤 PLAYER HIT
-            for (let id in players) {
-                let p = players[id];
-
-                if (!p || id === b.owner) continue;
-
-                if (
-                    b.x < p.x + 20 &&
-                    b.x + 5 > p.x &&
-                    b.y < p.y + 20 &&
-                    b.y + 5 > p.y
-                ) {
-                    p.hp -= 20;
-                    bList.splice(i, 1);
-
-                    if (p.hp <= 0) {
-                        p.hp = 100;
-                        p.x = 100;
-                        p.y = 100;
-                    }
-
-                    break;
-                }
-            }
         }
     }
 
-    // 🔥 SAFE STATE (NO CRASH)
+    // 🔥 SAFE FLAT STATE (FIX CRASH)
+    let allBullets = [];
+    for (let r in bullets) {
+        if (Array.isArray(bullets[r])) {
+            allBullets.push(...bullets[r]);
+        }
+    }
+
     io.emit("state", {
-        players: players || {},
-        bullets: bullets || {},
-        killFeed: killFeed || {}
+        players,
+        bullets: allBullets,
+        killFeed
     });
 
 }, 1000 / 60);
