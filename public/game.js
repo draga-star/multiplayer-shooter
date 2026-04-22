@@ -16,36 +16,60 @@ let mouse = { x: 0, y: 0 };
 
 let lastShot = 0;
 
-// 🧠 LOCAL PLAYER SMOOTH POSITION (IMPORTANT)
-let local = {
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0
-};
+// 🧠 WAIT STATE (FIX BLACK SCREEN)
+function draw() {
 
-// 🔥 JOIN
-window.onload = () => {
-    socket.emit("join", "1v1");
-};
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // ❗ WAIT FOR SOCKET
+    if (!myId || !players) {
+        ctx.fillStyle = "white";
+        ctx.fillText("Connecting...", 20, 20);
+        requestAnimationFrame(draw);
+        return;
+    }
+
+    move();
+
+    // 👤 PLAYERS
+    for (let id in players) {
+        let p = players[id];
+        if (!p) continue;
+
+        ctx.fillStyle = id === myId ? "blue" : "red";
+        ctx.fillRect(p.x, p.y, 20, 20);
+    }
+
+    // 🔫 BULLETS SAFE
+    ctx.fillStyle = "black";
+
+    if (Array.isArray(bullets)) {
+        bullets.forEach(b => {
+            if (b && typeof b.x === "number") {
+                ctx.fillRect(b.x, b.y, 5, 5);
+            }
+        });
+    }
+
+    requestAnimationFrame(draw);
+}
 
 // 🔥 INIT
 socket.on("init", (data) => {
     myId = data.id;
     players = data.players || {};
-    bullets = data.bullets || [];
+    bullets = Array.isArray(data.bullets) ? data.bullets : [];
     killFeed = data.killFeed || [];
-
-    if (players[myId]) {
-        local.x = players[myId].x;
-        local.y = players[myId].y;
-    }
 });
 
-// 🔥 STATE (ONLY OTHER PLAYERS)
+// 🔥 STATE SAFE
 socket.on("state", (data) => {
     players = data.players || {};
-    bullets = data.bullets || [];
+    bullets = Array.isArray(data.bullets)
+        ? data.bullets
+        : Object.values(data.bullets || {}).flat();
+
     killFeed = data.killFeed || [];
 });
 
@@ -55,71 +79,53 @@ document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
 // 🖱 MOUSE
 canvas.addEventListener("mousemove", (e) => {
-    const r = canvas.getBoundingClientRect();
+    let r = canvas.getBoundingClientRect();
     mouse.x = e.clientX - r.left;
     mouse.y = e.clientY - r.top;
 });
 
 canvas.addEventListener("mousedown", shoot);
 
-// 🧍 SMOOTH MOVEMENT (FIXED)
+// 🧍 MOVEMENT (NO JITTER)
 function move() {
-    let speed = 4;
+    let p = players[myId];
+    if (!p) return;
 
-    if (keys["w"]) local.y -= speed;
-    if (keys["s"]) local.y += speed;
-    if (keys["a"]) local.x -= speed;
-    if (keys["d"]) local.x += speed;
+    let speed = 5;
 
-    // send to server (NOT server control)
-    socket.emit("move", { x: local.x, y: local.y });
+    let x = p.x;
+    let y = p.y;
+
+    if (keys["w"]) y -= speed;
+    if (keys["s"]) y += speed;
+    if (keys["a"]) x -= speed;
+    if (keys["d"]) x += speed;
+
+    socket.emit("move", { x, y });
 }
 
-// 🔫 SHOOT (FIXED AIM)
+// 🔫 SHOOT
 function shoot() {
+    let p = players[myId];
+    if (!p) return;
+
     let now = Date.now();
     if (now - lastShot < 120) return;
     lastShot = now;
 
-    let angle = Math.atan2(mouse.y - local.y, mouse.x - local.x);
+    let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
 
     socket.emit("shoot", {
-        x: local.x,
-        y: local.y,
+        x: p.x,
+        y: p.y,
         vx: Math.cos(angle) * 8,
         vy: Math.sin(angle) * 8
     });
 }
 
-// 🎨 DRAW
-function draw() {
-    ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    move();
-
-    // 🧠 LOCAL PLAYER (NO JITTER)
-    ctx.fillStyle = "blue";
-    ctx.fillRect(local.x, local.y, 20, 20);
-
-    // 👤 OTHER PLAYERS
-    for (let id in players) {
-        if (id === myId) continue;
-
-        let p = players[id];
-        ctx.fillStyle = "red";
-        ctx.fillRect(p.x, p.y, 20, 20);
-    }
-
-    // 🔫 BULLETS SAFE
-    ctx.fillStyle = "black";
-    if (Array.isArray(bullets)) {
-        bullets.forEach(b => {
-            if (b) ctx.fillRect(b.x, b.y, 5, 5);
-        });
-    }
-
-    requestAnimationFrame(draw);
-}
-
 draw();
+
+// JOIN
+window.onload = () => {
+    socket.emit("join", "1v1");
+};
