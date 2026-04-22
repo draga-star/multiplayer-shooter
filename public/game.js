@@ -16,6 +16,14 @@ let mouse = { x: 0, y: 0 };
 
 let lastShot = 0;
 
+// 🧠 LOCAL PLAYER SMOOTH POSITION (IMPORTANT)
+let local = {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0
+};
+
 // 🔥 JOIN
 window.onload = () => {
     socket.emit("join", "1v1");
@@ -25,24 +33,21 @@ window.onload = () => {
 socket.on("init", (data) => {
     myId = data.id;
     players = data.players || {};
+    bullets = data.bullets || [];
+    killFeed = data.killFeed || [];
 
-    bullets = normalizeBullets(data.bullets);
-    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
+    if (players[myId]) {
+        local.x = players[myId].x;
+        local.y = players[myId].y;
+    }
 });
 
-// 🔥 STATE (IMPORTANT FIX)
+// 🔥 STATE (ONLY OTHER PLAYERS)
 socket.on("state", (data) => {
     players = data.players || {};
-    bullets = normalizeBullets(data.bullets);
-    killFeed = Array.isArray(data.killFeed) ? data.killFeed : [];
+    bullets = data.bullets || [];
+    killFeed = data.killFeed || [];
 });
-
-// 🧠 FIX: makes bullets ALWAYS array
-function normalizeBullets(data) {
-    if (Array.isArray(data)) return data;
-    if (!data) return [];
-    return Object.values(data).flat();
-}
 
 // 🎮 INPUT
 document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -57,74 +62,60 @@ canvas.addEventListener("mousemove", (e) => {
 
 canvas.addEventListener("mousedown", shoot);
 
-// 🧍 MOVE
+// 🧍 SMOOTH MOVEMENT (FIXED)
 function move() {
-    let p = players[myId];
-    if (!p) return;
+    let speed = 4;
 
-    let speed = 5;
+    if (keys["w"]) local.y -= speed;
+    if (keys["s"]) local.y += speed;
+    if (keys["a"]) local.x -= speed;
+    if (keys["d"]) local.x += speed;
 
-    let x = p.x;
-    let y = p.y;
-
-    if (keys["w"]) y -= speed;
-    if (keys["s"]) y += speed;
-    if (keys["a"]) x -= speed;
-    if (keys["d"]) x += speed;
-
-    socket.emit("move", { x, y });
+    // send to server (NOT server control)
+    socket.emit("move", { x: local.x, y: local.y });
 }
 
-// 🔫 SHOOT (aim fix)
+// 🔫 SHOOT (FIXED AIM)
 function shoot() {
-    let p = players[myId];
-    if (!p) return;
-
     let now = Date.now();
     if (now - lastShot < 120) return;
-
     lastShot = now;
 
-    let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+    let angle = Math.atan2(mouse.y - local.y, mouse.x - local.x);
 
     socket.emit("shoot", {
-        x: p.x,
-        y: p.y,
+        x: local.x,
+        y: local.y,
         vx: Math.cos(angle) * 8,
         vy: Math.sin(angle) * 8
     });
 }
 
-// 🎨 DRAW LOOP
+// 🎨 DRAW
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     move();
 
-    // 👤 players
-    for (let id in players) {
-        let p = players[id];
-        if (!p) continue;
+    // 🧠 LOCAL PLAYER (NO JITTER)
+    ctx.fillStyle = "blue";
+    ctx.fillRect(local.x, local.y, 20, 20);
 
-        ctx.fillStyle = id === myId ? "blue" : "red";
+    // 👤 OTHER PLAYERS
+    for (let id in players) {
+        if (id === myId) continue;
+
+        let p = players[id];
+        ctx.fillStyle = "red";
         ctx.fillRect(p.x, p.y, 20, 20);
     }
 
-    // 🔫 bullets (SAFE FIX)
+    // 🔫 BULLETS SAFE
     ctx.fillStyle = "black";
     if (Array.isArray(bullets)) {
         bullets.forEach(b => {
-            if (b && typeof b.x === "number") {
-                ctx.fillRect(b.x, b.y, 5, 5);
-            }
-        });
-    }
-
-    // 💀 kill feed (SAFE)
-    ctx.fillStyle = "black";
-    if (Array.isArray(killFeed)) {
-        killFeed.forEach((m, i) => {
-            ctx.fillText(m, 10, 20 + i * 20);
+            if (b) ctx.fillRect(b.x, b.y, 5, 5);
         });
     }
 
