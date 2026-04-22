@@ -1,28 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Multiplayer Shooter</title>
-
+  <title>DIAGNOSTIC SHOOTER</title>
   <style>
-    body {
-      margin: 0;
-      background: #111;
-      overflow: hidden;
-    }
-
-    canvas {
-      display: block;
-      background: #1e1e1e;
-    }
+    body { margin: 0; background: black; color: white; font-family: Arial; }
+    canvas { display: block; }
   </style>
 </head>
-
 <body>
 
-  <canvas id="game" width="1200" height="800"></canvas>
+<h1>DIAGNOSTIC MODE</h1>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="game.js"></script>
+<canvas id="game"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+
+<script>
+console.log("HTML LOADED SUCCESS");
+</script>
 
 </body>
 </html>
