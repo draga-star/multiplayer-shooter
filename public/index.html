@@ -1,14 +1,8 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Multiplayer Shooter</title>
-    <style>
-        body { margin: 0; background: #111; overflow: hidden; }
-        canvas { display: block; border: 2px solid #333; margin: auto; background: #1e1e1e; }
-    </style>
-</head>
-<body>
-    <canvas id="game"></canvas>
+<head><title>Multiplayer Shooter</title></head>
+<body style="margin:0; background:#111;">
+    <canvas id="game" width="1200" height="800" style="background:#1e1e1e; display:block;"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script src="game.js"></script>
 </body>
